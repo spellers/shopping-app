@@ -4,8 +4,9 @@ import sqlite3
 from datetime import datetime
 import tesco
 import datadir
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 import sys
+import updates
 
 # Frozen installs keep their templates in <install dir>/resources/templates
 # (read-only, next to the executable); dev uses the project folder.
@@ -14,6 +15,36 @@ if getattr(sys, 'frozen', False):
 else:
     app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or datadir.secret_key()
+
+@app.context_processor
+def inject_update_status():
+    """Every page gets an 'update' dict for the new-version banner."""
+    updates.ensure_check()
+    return dict(update=updates.status())
+
+
+@app.route('/updates/status')
+def updates_status():
+    """JSON endpoint: current version + latest release info."""
+    return jsonify(updates.status())
+
+
+@app.route('/updates/download')
+def updates_download():
+    """One-click update: redirect the browser to the platform installer."""
+    st = updates.status()
+    if st['download_url']:
+        return redirect(st['download_url'])
+    flash('No update available right now — try again later.', 'warning')
+    return redirect(url_for('meal_tracker'))
+
+
+@app.route('/updates/dismiss', methods=['POST'])
+def updates_dismiss():
+    """Hide the update banner for a week."""
+    updates.dismiss(request.form.get('tag') or updates.status().get('latest_version'))
+    return redirect(request.referrer or url_for('meal_tracker'))
+
 
 def get_db():
     db = sqlite3.connect(datadir.db_path())
