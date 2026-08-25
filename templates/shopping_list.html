@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Shopping List{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h2 style="font-weight:700; margin-bottom:20px;">Shopping List</h2>
+    <a href="/vote/{{ request.args.get('vote_id', '') }}" class="btn btn-outline-secondary">← Back to Results</a>
+</div>
+
+{% if meals %}
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 style="font-weight:600; margin-bottom:12px;">Selected meals</h5>
+        <div class="d-flex flex-wrap gap-2">
+            {% for meal in meals %}
+            <a href="/meal_tracker/{{ meal.id }}" class="badge bg-primary text-white" style="font-size:0.9rem; text-decoration:none;">
+                {{ meal.name }}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if items %}
+<div class="card">
+    <div class="card-body">
+        {% for item in items %}
+        <div class="mb-3 p-3 border rounded">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <h6 style="font-weight:600; margin:0;">{{ item.name }}</h6>
+                    {% if item.tesco %}
+                    <small class="text-muted d-block" style="font-size:12px;">
+                        {{ item.tesco.title }}
+                        {% if item.tesco.price is not none %}
+                        &middot; &pound;{{ '%.2f' % item.tesco.price }}{% if item.tesco.unit_of_measure %}/{{ item.tesco.unit_of_measure }}{% endif %}
+                        {% endif %}
+                    </small>
+                    {% endif %}
+                </div>
+                <div style="display:flex; align-items:center; gap:6px;">
+                    {% if item.quantity %}
+                    <span class="badge bg-secondary">{{ item.quantity }}</span>
+                    {% endif %}
+                    {% if item.tesco %}
+                    <span class="badge bg-success-subtle text-success">Tesco &pound;{{ '%.2f' % (item.tesco.price or 0) }}</span>
+                    {% else %}
+                    <span class="badge bg-light text-muted">unmatched</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        {% set matched = items | selectattr('tesco_sku', 'ne', '') | list %}
+        {% if matched and signed_in %}
+        <hr style="margin:16px 0;">
+        <form method="POST" action="/tesco/add_to_basket" onsubmit="return confirm('Add {{ matched | length }} matched item(s) to your Tesco basket?')">
+            <button class="btn btn-success w-100">Add {{ matched | length }} matched item(s) to Tesco basket</button>
+        </form>
+        {% elif matched and not signed_in %}
+        <hr style="margin:16px 0;">
+        <a href="/tesco" class="btn btn-outline-success w-100">Sign in to Tesco to add basket items</a>
+        {% endif %}
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <h5 class="text-muted">Your shopping list is empty</h5>
+        <a href="/votes" class="btn btn-primary mt-2">Create a shopping list</a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

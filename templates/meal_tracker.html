@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Meal Planner{% endblock %}
+{% block content %}
+
+<h2 style="font-weight:700; margin-bottom:20px; font-size:1.8rem;">Meal Planner</h2>
+
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+    <div class="btn-group">
+        <a href="/add_meal" class="btn btn-primary">New Meal</a>
+    </div>
+
+</div>
+
+{% if meals %}
+<div class="row">
+{% for meal in meals %}
+<div class="col-md-4 mb-3">
+    <div class="card meal-card" style="cursor:pointer; position:relative; height:100%;" onclick="window.location='/meal_tracker/{{ meal.id }}'">
+        <div class="card-body" style="flex:1; position:relative;">
+            <h5 class="card-title" style="margin-bottom:8px; font-weight:600; margin-left:24px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">{{ meal.name }}</h5>
+            {% if meal.description %}
+            <p class="card-text text-muted mb-2" style="font-size:0.85rem; margin-left:24px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">{{ meal.description }}</p>
+            {% endif %}
+        </div>
+        <div class="card-footer" style="text-align:right;">
+            <form method="POST" action="/delete_meal/{{ meal.id }}" onsubmit="return confirm('Delete meal?')">
+                <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <h5 class="text-muted">No meals yet</h5>
+        <a href="/add_meal" class="btn btn-primary mt-2">Add your first meal</a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

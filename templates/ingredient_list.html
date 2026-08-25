@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Ingredients for Meal #{{ meal_id }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>🥕 Ingredients for Meal #{{ meal_id }}</h1>
+    
+    <table class="ingredient-table">
+        <thead>
+            <tr>
+                <th>Ingredient</th>
+                <th>Quantity</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for ingredient in ingredients %}
+            <tr>
+                <td>
+                    {{ ingredient.name }}
+                    {% if ingredient.persistent %}
+                    <span class="badge persistent-badge">🔒 Persistent</span>
+                    {% endif %}
+                    {% if ingredient.allergies %}
+                    <span class="badge allergy-badge">⚠️ Allergies</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if ingredient.quantity %}{{ ingredient.quantity }}{% else %}<span class="no-qty">—</span>{% endif %}
+                </td>
+                <td>
+                    {% if ingredient.persistent %}
+                    <span class="badge info-badge">Cannot delete</span>
+                    {% else %}
+                    <form method="POST" action="/remove-ingredient/{{ ingredient.id }}" style="display: inline;">
+                        <button type="submit" class="btn btn-delete-small">×</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="3" class="empty-state">No ingredients added yet</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    <div class="add-ingredient-form">
+        <form method="POST" action="/add-ingredient/{{ meal_id }}" class="inline-form">
+            <input type="text" name="name" placeholder="Add new ingredient..." required>
+            <input type="text" name="quantity" placeholder="Qty (e.g. 2 cups)" style="max-width: 150px;">
+            <button type="submit" class="btn btn-add">Add</button>
+        </form>
+    </div>
+    
+    <a href="/meal/{{ meal_id }}" class="btn btn-secondary">← Back to Meal Details</a>
+</div>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Add Meal - Meal Planner{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h2>Add New Meal</h2>
+    <a href="/meal_tracker" class="btn btn-outline-secondary btn-sm">← Back</a>
+</div>
+<div class="card" style="max-width:500px;">
+    <div class="card-body">
+        <form method="POST">
+            <div class="mb-3">
+                <label class="form-label" style="font-weight:500; font-size:13px;">Meal Name</label>
+                <input type="text" name="name" class="form-control" required placeholder="e.g. Spaghetti Bolognese">
+            </div>
+            <div class="mb-3">
+                <label class="form-label" style="font-weight:500; font-size:13px;">Description (optional)</label>
+                <textarea name="description" class="form-control" rows="3" placeholder="Brief description..."></textarea>
+            </div>
+            <button type="submit" class="btn btn-success">Add Meal</button>
+            <a href="/meal_tracker" class="btn btn-outline-secondary btn-sm">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

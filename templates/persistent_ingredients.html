@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Persistent Ingredients - Meal Planner{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h2>Persistent Ingredients</h2>
+    <button class="btn btn-success" onclick="document.getElementById('add-form').classList.toggle('d-none')">+ Add Ingredient</button>
+</div>
+<div id="add-form" class="card d-none mb-4">
+    <div class="card-body">
+        <form method="POST">
+            <div class="row">
+                <div class="col-md-4">
+                    <input type="text" name="name" class="form-control" placeholder="Ingredient name" required>
+                </div>
+                <div class="col-md-3">
+                    <input type="text" name="category" class="form-control" placeholder="Category">
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-success w-100">Add</button>
+                </div>
+            </div>
+            <div class="form-check mt-2">
+                <input type="checkbox" class="form-check-input" id="pi-shareable" name="shareable" value="1" checked>
+                <label class="form-check-label" for="pi-shareable" style="font-size:13px;">
+                    Shared across meals
+                    <span class="text-muted">(untick for e.g. chicken &amp; mince — one unit per meal)</span>
+                </label>
+            </div>
+        </form>
+    </div>
+</div>
+{% if ingredients %}
+<div class="card">
+    <div class="card-body">
+        <table class="table table-sm" style="font-size:13px;">
+            <thead>
+                <tr><th>Name</th><th>Category</th><th>Per meal</th><th>Tesco product</th><th></th></tr>
+            </thead>
+            <tbody>
+            {% for ing in ingredients %}
+            <tr>
+                <td>{{ ing['name'] }}</td>
+                <td><span class="badge bg-secondary">{{ ing['category'] or '-' }}</span></td>
+                <td>
+                    <form method="POST" action="/toggle_shareable/{{ ing['id'] }}/persist" style="display:inline;">
+                        <button type="submit" class="btn btn-sm btn-outline-{{ 'warning' if (ing['shareable'] is none or ing['shareable']) else 'secondary' }}"
+                                style="font-size:11px; padding:2px 8px;"
+                                title="Shared: one unit covers all meals. Per meal: one unit for each meal that uses it.">
+                            {{ 'Shared' if (ing['shareable'] is none or ing['shareable']) else 'Per meal' }}
+                        </button>
+                    </form>
+                </td>
+                <td style="font-size:12px;">
+                    {% if ing['tesco_sku'] %}
+                    <span class="badge bg-success-subtle text-success">{{ ing['tesco_sku'] }}</span>
+                    {% endif %}
+                    <button class="btn btn-outline-primary btn-sm" style="padding:2px 8px; font-size:11px;"
+                            onclick="this.disabled=true;this.textContent='Searching...';tescoSuggest('/tesco/suggest/{{ ing['id'] }}/persist', this)">
+                        {% if ing['tesco_sku'] %}Re-match{% else %}Find in Tesco{% endif %}
+                    </button>
+                </td>
+                <td>
+                    <form method="POST" action="/ingredient/delete/{{ ing['id'] }}" style="display:inline;" onsubmit="return confirm('Delete?')">
+                        <button class="btn btn-outline-danger btn-sm" style="padding:2px 8px; font-size:11px;">X</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<p class="text-muted">No persistent ingredients saved yet. Add some here, then link them to meals from the meal detail page.</p>
+{% endif %}
+{% endblock %}

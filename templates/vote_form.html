@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Cast Vote - Meal Tracker{% endblock %}
+{% block content %}
+<h1>🗳️ {{ vote['name'] }}</h1>
+<p>Select exactly 3 meals and rank them 1st, 2nd, and 3rd.</p>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{ category }}">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<form method="POST" action="/vote/{{ vote['id'] }}">
+    <input type="hidden" name="voter" id="voter" value="Visitor">
+    
+    <div class="form-group">
+        <label for="voter">Your name:</label>
+        <input type="text" id="voter" name="voter" class="input" required>
+    </div>
+
+    <div class="form-group">
+        <label>Select 3 meals:</label>
+        {% for option in options %}
+        <div>
+            <input type="checkbox" name="meal_choice" value="{{ option['meal_name'] }}">
+            <label>{{ option['meal_name'] }}</label>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <button type="submit" class="btn btn-primary">Cast Vote</button>
+</form>
+{% endblock %}

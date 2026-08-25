@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}{{ meal['name'] }} - Meal Planner{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h2>{{ meal['name'] }}</h2>
+    <div style="display:flex; gap:6px;">
+        <a href="/edit_meal/{{ meal['id'] }}" class="btn btn-primary btn-sm">Edit</a>
+        <form method="POST" action="/delete_meal/{{ meal['id'] }}" style="display:inline;" onsubmit="return confirm('Delete this meal?')">
+            <button class="btn btn-danger btn-sm">Delete</button>
+        </form>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        {% if meal.description or '' %}
+        <p class="text-muted mb-0">{{ meal['description'] or '' }}</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h6 style="font-weight:600; margin-bottom:12px;">Add Persistent Ingredient</h6>
+        <form method="POST" action="/meal_tracker/{{ meal['id'] }}/add_persistent">
+            <div class="row align-items-end">
+                <div class="col-md-5">
+                    <label class="form-label" style="font-weight:500; font-size:12px;">Ingredient</label>
+                    <select name="persistent_id" class="form-control" required>
+                        <option value="">Select ingredient...</option>
+                        {% for p in all_persistent %}
+                        <option value="{{ p['id'] }}">{{ p['name'] }}{% if p['category'] %} ({{ p['category'] }}){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" style="font-weight:500; font-size:12px;">Quantity</label>
+                    <input type="text" name="quantity" class="form-control" placeholder="e.g. 2 cups">
+                </div>
+                <div class="col-md-4">
+                    <button type="submit" class="btn btn-success w-100">Add to Meal</button>
+                </div>
+            </div>
+        </form>
+        {% if not all_persistent %}
+        <p class="text-muted mt-2" style="font-size:12px;">No persistent ingredients yet. <a href="/persistent_ingredients">Go add some</a>.</p>
+        {% endif %}
+    </div>
+</div>
+
+{% if persistent_links %}
+<div class="card mb-4">
+    <div class="card-body">
+        <h6 style="font-weight:600; margin-bottom:12px;">Linked Persistent Ingredients</h6>
+        <table class="table table-sm" style="font-size:13px;">
+            <thead>
+                <tr><th>Ingredient</th><th>Category</th><th>Quantity</th><th>Per meal</th><th>Tesco product</th><th></th></tr>
+            </thead>
+            <tbody>
+            {% for link in persistent_links %}
+            <tr>
+                <td>{{ link['ingredient_name'] }}</td>
+                <td><span class="badge bg-secondary">{{ link['category'] or '-' }}</span></td>
+                <td>{{ link['quantity'] or '-' }}</td>
+                <td>
+                    <form method="POST" action="/toggle_shareable/{{ link['persistent_ingredient_id'] }}/persist" style="display:inline;">
+                        <button type="submit" class="btn btn-sm btn-outline-{{ 'warning' if (link['shareable'] is none or link['shareable']) else 'secondary' }}"
+                                style="font-size:11px; padding:2px 8px;"
+                                title="Shared: one unit covers all meals. Per meal: one unit for each meal that uses it.">
+                            {{ 'Shared' if (link['shareable'] is none or link['shareable']) else 'Per meal' }}
+                        </button>
+                    </form>
+                </td>
+                <td style="font-size:12px;">
+                    {% if link['tesco_sku'] %}
+                    <span class="badge bg-success-subtle text-success">{{ link['tesco_sku'] }}</span>
+                    {% endif %}
+                    <button class="btn btn-outline-primary btn-sm" style="padding:2px 8px; font-size:11px;"
+                            onclick="this.disabled=true;this.textContent='Searching...';tescoSuggest('/tesco/suggest/{{ link['persistent_ingredient_id'] }}/persist', this)">
+                        {% if link['tesco_sku'] %}Re-match{% else %}Find in Tesco{% endif %}
+                    </button>
+                </td>
+                <td>
+                    <form method="POST" action="/meal_tracker/{{ meal['id'] }}/remove_persistent/{{ link['id'] }}" style="display:inline;" onsubmit="return confirm('Remove this ingredient?')">
+                        <button class="btn btn-outline-danger btn-sm" style="padding:2px 8px; font-size:11px;">X</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% if ingredients %}
+<div class="card mb-4">
+    <div class="card-body">
+        <h6 style="font-weight:600; margin-bottom:12px;">Other Ingredients</h6>
+        <table class="table table-sm" style="font-size:13px;">
+            <thead>
+                <tr><th>Ingredient</th><th>Qty</th><th>Unit</th><th>Per meal</th><th>Tesco product</th><th></th></tr>
+            </thead>
+            <tbody>
+            {% for ing in ingredients %}
+            <tr>
+                <td>{{ ing['name'] }}</td>
+                <td>{{ ing['quantity'] }}</td>
+                <td>{{ ing['unit'] }}</td>
+                <td>
+                    <form method="POST" action="/toggle_shareable/{{ ing['id'] }}/ing" style="display:inline;">
+                        <button type="submit" class="btn btn-sm btn-outline-{{ 'warning' if (ing['shareable'] is none or ing['shareable']) else 'secondary' }}"
+                                style="font-size:11px; padding:2px 8px;"
+                                title="Shared: one unit covers all meals. Per meal: one unit for each meal that uses it.">
+                            {{ 'Shared' if (ing['shareable'] is none or ing['shareable']) else 'Per meal' }}
+                        </button>
+                    </form>
+                </td>
+                <td style="font-size:12px;">
+                    {% if ing['tesco_sku'] %}
+                    <span class="badge bg-success-subtle text-success">{{ ing['tesco_sku'] }}</span>
+                    {% endif %}
+                    <button class="btn btn-outline-primary btn-sm" style="padding:2px 8px; font-size:11px;"
+                            onclick="this.disabled=true;this.textContent='Searching...';tescoSuggest('/tesco/suggest/{{ ing['id'] }}/ing', this)">
+                        {% if ing['tesco_sku'] %}Re-match{% else %}Find in Tesco{% endif %}
+                    </button>
+                </td>
+                <td>
+                    <form method="POST" action="/delete_ingredient/{{ ing['id'] }}" style="display:inline;" onsubmit="return confirm('Delete?')">
+                        <button class="btn btn-outline-danger btn-sm" style="padding:2px 8px; font-size:11px;">X</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<div style="display:flex; gap:6px; margin-top:12px;">
+    <a href="/add_ingredient?meal_id={{ meal['id'] }}" class="btn btn-success btn-sm">+ Add Ingredient</a>
+    <a href="/meal_tracker" class="btn btn-outline-secondary btn-sm">← Back</a>
+</div>
+{% endblock %}

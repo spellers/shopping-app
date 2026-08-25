@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Results: {{ vote.name }}{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h2>Results: {{ vote.name }}</h2>
+    <a href="/vote/{{ vote.id }}" class="btn btn-outline-secondary">← Back</a>
+</div>
+
+{% if options %}
+<div class="card mb-4">
+    <div class="card-body">
+        {% for opt in options %}
+        <div style="margin-bottom:14px;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                <strong>{{ opt.meal_name }}</strong>
+                <span class="text-muted">{{ opt.vote_count }} vote{{ 's' if opt.vote_count != 1 else '' }}</span>
+            </div>
+            {% if total_votes > 0 %}
+            <div style="background:#e5e7eb; border-radius:4px; overflow:hidden;">
+                <div style="background:#3b82f6; height:22px; width:{{ (opt.vote_count / total_votes * 100) | round(1) }}%;"></div>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <h5 class="text-muted">No options yet</h5>
+        <a href="/vote/new" class="btn btn-primary mt-2">Add options</a>
+    </div>
+</div>
+{% endif %}
+
+{% if options %}
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 style="font-weight:600; margin-bottom:12px;">Add to shopping list:</h5>
+        <form method="POST" action="/create_shopping_list">
+            <input type="hidden" name="vote_id" value="{{ vote.id }}">
+            {% for opt in options %}
+            <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" name="meal_ids" value="{{ opt.meal_name }}" id="meal_{{ loop.index }}">
+                <label class="form-check-label" for="meal_{{ loop.index }}">
+                    {{ opt.meal_name }}
+                    <span class="text-muted ms-2">{{ opt.vote_count }} vote{{ 's' if opt.vote_count != 1 else '' }}</span>
+                </label>
+            </div>
+            {% endfor %}
+            <button type="submit" class="btn btn-success mt-3">Add to Shopping List</button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-body">
+        <h5 style="font-weight:600; margin-bottom:4px;">Total votes: {{ total_votes }}</h5>
+        <p class="text-muted">Results based on votes cast so far.</p>
+    </div>
+</div>
+
+<a href="/votes" class="btn btn-outline-secondary mt-3">Back to all votes</a>
+{% endblock %}

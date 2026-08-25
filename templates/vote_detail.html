@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Vote: {{ vote.name }}{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h2>{{ vote.name }}</h2>
+    <a href="/votes" class="btn btn-outline-secondary">← Back</a>
+</div>
+
+{% if options %}
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 style="font-weight:600; margin-bottom:12px;">Select up to 3 options:</h5>
+        <form method="POST" action="/vote/{{ vote.id }}/cast">
+            {% for opt in options %}
+            <div class="form-check mb-2">
+                <input class="form-check-input vote-checkbox" type="checkbox" 
+                       name="option_ids" value="{{ opt.id }}" 
+                       data-max="3" id="opt_{{ opt.id }}">
+                <label class="form-check-label" for="opt_{{ opt.id }}">
+                    {{ opt.meal_name }}
+                </label>
+            </div>
+            {% endfor %}
+            <button type="submit" class="btn btn-primary mt-3">Submit Vote</button>
+        </form>
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.vote-checkbox').forEach(cb => {
+                cb.addEventListener('change', function() {
+                    if (document.querySelectorAll('.vote-checkbox:checked').length > 3) {
+                        this.checked = false;
+                        alert('You can select a maximum of 3 options.');
+                    }
+                });
+            });
+        });
+        </script>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body text-center py-4">
+        <p class="text-muted mb-3">No options selected yet.</p>
+        <a href="/vote/new/{{ vote.id }}" class="btn btn-outline-secondary">Add Options</a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Shopping List{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>🛒 Shopping List</h1>
+    
+    <div class="actions">
+        <a href="/" class="btn btn-secondary">← Back to Meals</a>
+    </div>
+    
+    <ul class="shopping-items">
+        {% for item in shopping %}
+        <li class="shopping-item {% if item.done %}done{% endif %}">
+            <form method="POST" action="/shopping-list/{{ item.id }}/toggle" style="display: inline;">
+                <button type="submit" class="btn btn-toggle">
+                    {% if item.done %}✓{% else %}○{% endif %}
+                </button>
+            </form>
+            <span>{{ item.item }}</span>
+            <form method="POST" action="/shopping-list/{{ item.id }}/delete" style="display: inline;"
+                  onsubmit="return confirm('Remove this item?')">
+                <button type="submit" class="btn btn-delete-small">×</button>
+            </form>
+        </li>
+        {% else %}
+        <li class="empty-shopping">No items in shopping list</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endblock %}

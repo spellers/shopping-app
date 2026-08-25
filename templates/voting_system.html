@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Votes - Meal Tracker{% endblock %}
+{% block content %}
+<h1>📊 Active Votes</h1>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{ category }}">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<a href="/add_vote" class="btn btn-primary" style="margin-bottom: 1rem;">➕ Create New Vote</a>
+
+{% if votes %}
+<table>
+    <thead>
+        <tr>
+            <th>Vote Name</th>
+            <th>Created</th>
+            <th>Options</th>
+            <th>Votes Cast</th>
+            <th>Status</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for vote in votes %}
+        <tr>
+            <td>{{ vote['name'] }}</td>
+            <td>{{ vote['created_at'] }}</td>
+            <td>{{ vote['option_count'] }}</td>
+            <td>{{ vote['vote_count'] }}</td>
+            <td>{{ "Active" if vote['is_active'] else "Ended" }}</td>
+            <td>
+                <a href="/votes/{{ vote['id'] }}" class="btn btn-primary" style="padding: 0.25rem 0.5rem;">View</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No active votes. <a href="/add_vote">Create one</a> to get started!</p>
+{% endif %}
+{% endblock %}

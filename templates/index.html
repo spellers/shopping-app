@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shopping List App</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; color: #333; padding: 1rem; }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { text-align: center; margin-bottom: 1.5rem; color: #2c3e50; }
+        .card { background: white; border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem; }
+        .btn { padding: 0.5rem 1rem; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: all 0.2s; }
+        .btn-primary { background: #3498db; color: white; }
+        .btn-primary:hover { background: #2980b9; }
+        .btn-success { background: #27ae60; color: white; }
+        .btn-success:hover { background: #219a52; }
+        .btn-danger { background: #e74c3c; color: white; font-size: 0.8rem; padding: 0.4rem 0.75rem; }
+        .btn-danger:hover { background: #c0392b; }
+        .btn-sm { padding: 0.35rem 0.7rem; font-size: 0.85rem; }
+        input[type="text"], input[type="number"] { padding: 0.5rem 0.75rem; border: 1px solid #ddd; border-radius: 6px; font-size: 0.95rem; width: 100%; }
+        input:focus { outline: none; border-color: #3498db; box-shadow: 0 0 0 3px rgba(52,152,219,0.1); }
+        .form-group { margin-bottom: 0.75rem; }
+        .form-row { display: flex; gap: 0.5rem; align-items: center; }
+        .form-row .form-group { flex: 1; margin-bottom: 0; }
+        .ingredient-list { list-style: none; margin-top: 0.5rem; }
+        .ingredient-list li { padding: 0.4rem 0; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; }
+        .ingredient-list li:last-child { border-bottom: none; }
+        .checkbox-group { display: flex; align-items: center; gap: 0.5rem; }
+        .checkbox-group input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+        .checkbox-group label { cursor: pointer; font-size: 0.95rem; }
+        .meal-name-input { font-size: 1.1rem; font-weight: 600; border: none; background: transparent; padding: 0; width: auto; flex: 1; min-width: 100px; }
+        .meal-name-input:focus { outline: none; box-shadow: none; }
+        .section-title { font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem; color: #555; }
+        .empty-state { text-align: center; color: #999; padding: 2rem; }
+        .selected-badge { background: #e74c3c; color: white; border-radius: 50%; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: bold; margin-left: 0.5rem; }
+        @media (max-width: 600px) {
+            body { padding: 0.5rem; }
+            .card { padding: 1rem; }
+            .form-row { flex-direction: column; }
+            .card-header { flex-direction: column; align-items: flex-start; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🛒 Shopping List</h1>
+
+        <!-- Create Meal -->
+        <div class="card">
+            <h2 style="margin-bottom: 1rem;">Create a Meal</h2>
+            <form id="create-meal-form" onsubmit="createMeal(event)">
+                <div class="form-row">
+                    <div class="form-group">
+                        <input type="text" id="new-meal-name" placeholder="Meal name (e.g. Spaghetti Bolognese)" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Create</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Meals List -->
+        <h2 style="margin-bottom: 1rem;">Your Meals</h2>
+        <div id="meals-container">
+            <div class="empty-state">No meals yet. Create one above!</div>
+        </div>
+
+        <!-- Shopping List -->
+        <div id="shopping-section" style="display:none; margin-top: 1.5rem;">
+            <div class="card">
+                <div class="card-header">
+                    <h2>🛍️ Shopping List</h2>
+                    <button class="btn btn-success" onclick="createShoppingList()">Generate List <span id="selected-count" class="selected-badge" style="display:none;">0</span></button>
+                </div>
+                <div id="shopping-items"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedMeals = new Set();
+
+        async function fetchMeals() {
+            const resp = await fetch('/meals');
+            const meals = await resp.json();
+            renderMeals(meals);
+        }
+
+        function updateBadge() {
+            const badge = document.getElementById('selected-count');
+            if (selectedMeals.size > 0) {
+                badge.textContent = selectedMeals.size;
+                badge.style.display = 'inline-flex';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        function renderMeals(meals) {
+            const container = document.getElementById('meals-container');
+            const shoppingSection = document.getElementById('shopping-section');
+
+            if (meals.length === 0) {
+                container.innerHTML = '<div class="empty-state">No meals yet. Create one above!</div>';
+                shoppingSection.style.display = 'none';
+                return;
+            }
+
+            shoppingSection.style.display = 'block';
+            container.innerHTML = '';
+
+            meals.forEach(meal => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.id = `meal-${meal.id}`;
+
+                let ingredientsHtml = '<ul class="ingredient-list">';
+                meal.ingredients.forEach(ing => {
+                    ingredientsHtml += `<li><span>${escapeHtml(ing.name)} ${ing.quantity ? '— ' + escapeHtml(ing.quantity) : ''}</span></li>`;
+                });
+                ingredientsHtml += '</ul>';
+
+                card.innerHTML = `
+                    <div class="card-header">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="select-meal-${meal.id}" data-meal-id="${meal.id}" onchange="toggleSelect(${meal.id})" ${selectedMeals.has(meal.id) ? 'checked' : ''}>
+                            <label for="select-meal-${meal.id}">Select</label>
+                        </div>
+                        <input type="text" class="meal-name-input" value="${escapeHtml(meal.name)}">
+                        <button class="btn btn-danger" onclick="deleteMeal(${meal.id})">Delete</button>
+                    </div>
+                    <div class="section-title">Ingredients</div>
+                    ${ingredientsHtml}
+                    <form onsubmit="addIngredient(event, ${meal.id})" style="margin-top: 0.75rem;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <input type="text" placeholder="Ingredient name" required id="ing-name-${meal.id}">
+                            </div>
+                            <div class="form-group">
+                                <input type="text" placeholder="Quantity (optional)" id="ing-qty-${meal.id}">
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-sm">Add</button>
+                        </div>
+                    </form>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        async function createMeal(e) {
+            e.preventDefault();
+            const name = document.getElementById('new-meal-name').value.trim();
+            if (!name) return;
+
+            const resp = await fetch('/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+
+            if (resp.ok) {
+                document.getElementById('new-meal-name').value = '';
+                fetchMeals();
+            }
+        }
+
+        async function addIngredient(e, mealId) {
+            e.preventDefault();
+            const name = document.getElementById(`ing-name-${mealId}`).value.trim();
+            const qty = document.getElementById(`ing-qty-${mealId}`).value.trim();
+            if (!name) return;
+
+            const resp = await fetch(`/meals/${mealId}/ingredients`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, quantity: qty })
+            });
+
+            if (resp.ok) {
+                document.getElementById(`ing-name-${mealId}`).value = '';
+                document.getElementById(`ing-qty-${mealId}`).value = '';
+                fetchMeals();
+            }
+        }
+
+        async function deleteMeal(mealId) {
+            if (!confirm('Delete this meal?')) return;
+            const resp = await fetch(`/meals/${mealId}`, { method: 'DELETE' });
+            if (resp.ok) fetchMeals();
+        }
+
+        function toggleSelect(mealId) {
+            if (selectedMeals.has(mealId)) {
+                selectedMeals.delete(mealId);
+            } else {
+                selectedMeals.add(mealId);
+            }
+            updateBadge();
+        }
+
+        async function createShoppingList() {
+            if (selectedMeals.size === 0) {
+                alert('Select at least one meal first.');
+                return;
+            }
+
+            const resp = await fetch('/shopping-list', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ meal_ids: [...selectedMeals] })
+            });
+
+            if (resp.ok) {
+                const items = await resp.json();
+                renderShoppingItems(items);
+            }
+        }
+
+        function renderShoppingItems(items) {
+            const container = document.getElementById('shopping-items');
+            if (items.length === 0) {
+                container.innerHTML = '<div class="empty-state">No ingredients to add.</div>';
+                return;
+            }
+
+            let html = '<ul class="ingredient-list">';
+            items.forEach(item => {
+                const checked = item.is_purchased ? 'checked' : '';
+                html += `<li>
+                    <div class="checkbox-group">
+                        <input type="checkbox" ${checked}>
+                        <label>${escapeHtml(item.ingredient_name)} ${item.quantity ? '— ' + escapeHtml(item.quantity) : ''}</label>
+                    </div>
+                </li>`;
+            });
+            html += '</ul>';
+            container.innerHTML = html;
+        }
+
+        fetchMeals();
+    </script>
+</body>
+</html>

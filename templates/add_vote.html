@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Add Vote - Meal Tracker{% endblock %}
+{% block content %}
+<h1>🗳️ Create Vote</h1>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{ category }}">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<form method="POST" class="vote-form">
+    <div class="form-group">
+        <label for="name">Vote Name:</label>
+        <input type="text" id="name" name="name" class="input" required placeholder="e.g., Dinner vote 2026-07-10">
+    </div>
+    <div class="form-group">
+        <label>Select meals to vote on:</label>
+        {% for meal in meals %}
+        <div>
+            <input type="checkbox" name="meals" value="{{ meal }}" id="meal_{{ loop.index }}">
+            <label for="meal_{{ loop.index }}">{{ meal }}</label>
+        </div>
+        {% endfor %}
+        {% if not meals %}
+        <p style="color: #999; margin-top: 0.5rem;">No meals created yet. <a href="/meal_tracker">Go to Meal Tracker</a> to add meals first.</p>
+        {% endif %}
+    </div>
+    <button type="submit" class="btn btn-primary">Create Vote</button>
+</form>
+{% endblock %}

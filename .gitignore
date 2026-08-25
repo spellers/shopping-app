@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# Node
+node_modules/
+
+# Build artifacts (reproducible via build/build.py)
+dist/
+squashfs-root/
+*.AppImage
+*.AppImage.builder
+build/work/
+build/AppDir/
+build/MiniBig/
+build/AppRun.bak
+build/payload.sqsh
+build/mini_test.iss
+build/mini_test/
+# downloaded portable Node runtimes + Windows embeddable Python (cross-build)
+build/node/
+build/winpy/
+# appimagetool/linuxdeploy tool downloads
+build/*.AppImage
+build/innosetup.exe
+
+# App runtime data (user data lives in the per-user data dir;
+# these are pre-migration leftovers)
+runs/
+shopping_app.db
+*.db.bak
+*.db.pre-migration.bak
+# downloaded build inputs/tools (only runtime-61e6688-x86_64 is committed: it's a required AppImage build input)
+build/winpy/
+build/tmp/
+build/python-*.exe
+build/python-win-embed.zip
+build/runtime-good-x86_64
+build/runtime-v12-x86_64
+build/runtime-x86_64
