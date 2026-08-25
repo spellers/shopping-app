@@ -13,7 +13,12 @@ import time
 import datadir
 
 BASE_DIR = datadir.resource_dir()
-CLI = os.path.join(BASE_DIR, 'node_modules', '.bin', 'basketeer')
+# The CLI's real entry point. We deliberately do NOT use node_modules/.bin/
+# basketeer: on Windows npm only creates a `basketeer.cmd` shim there, and
+# the Unix shim's `#!/usr/bin/env node` shebang requires a system Node on
+# PATH, which a frozen install doesn't have. Running the JS directly on the
+# bundled Node works identically everywhere.
+CLI_JS = os.path.join(BASE_DIR, 'node_modules', 'basketeer', 'dist', 'cli.js')
 LOGIN_SCRIPT = os.path.join(BASE_DIR, 'scripts', 'tesco_login.js')
 NODE = datadir.node_executable() or 'node'
 # The basketeer CLI hard-codes this path (no env override), so the session
@@ -29,14 +34,17 @@ class TescoError(Exception):
 
 
 def _run(args, timeout=90):
-    if not os.path.exists(CLI):
-        raise TescoError('basketeer CLI not found - run: npm install (in project dir)')
+    if not os.path.exists(CLI_JS):
+        raise TescoError('basketeer CLI is missing from the installation - reinstall the app')
+    if NODE is None or not os.path.exists(NODE):
+        raise TescoError('the bundled Node runtime is missing - reinstall the app')
     try:
-        # Auth refreshes launch a headed Chrome inside the CLI; without DISPLAY
-        # (e.g. app started from systemd after a reboot) that launch dies with
-        # 'Target page, context or browser has been closed'.
+        # Run the CLI's entry point on the bundled Node. Auth refreshes launch
+        # a headed Chrome inside the CLI; without DISPLAY (e.g. app started
+        # from systemd after a reboot) that launch dies with 'Target page,
+        # context or browser has been closed'.
         proc = subprocess.run(
-            [CLI] + args,
+            [NODE, CLI_JS] + args,
             capture_output=True, text=True, timeout=timeout, cwd=BASE_DIR,
             env=_display_env(),
         )
