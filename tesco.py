@@ -139,6 +139,10 @@ def _display_env():
     env = dict(os.environ)
     if env.get('DISPLAY'):
         return env
+    # The /proc scan below is Linux-only (Windows has no X display to find
+    # and no os.getuid).
+    if not hasattr(os, 'getuid'):
+        return env
     my_uid = str(os.getuid())
     for entry in os.listdir('/proc'):
         if not entry.isdigit() or int(entry) == os.getpid():
