@@ -4,6 +4,7 @@ import sqlite3
 from datetime import datetime
 import tesco
 import datadir
+import recipe_import
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 import sys
 import updates
@@ -432,6 +433,51 @@ def delete_meal(meal_id):
     db.close()
     flash('Meal deleted!', 'success')
     return redirect('/meal_tracker')
+
+@app.route('/import_meal', methods=['POST'])
+def import_meal():
+    """One-click recipe import: fetch a recipe page, create the meal, and
+    link its ingredients - reusing persistent ingredients by name and adding
+    any new ones to the persistent list."""
+    url = request.form.get('url', '').strip()
+    try:
+        recipe = recipe_import.fetch_recipe(url)
+    except recipe_import.RecipeError as e:
+        flash(str(e), 'danger')
+        return redirect(url_for('meal_tracker'))
+
+    db = get_db()
+    db.execute('INSERT INTO meals (name, description) VALUES (?, ?)',
+               (recipe['name'], recipe['description'][:500] if recipe['description'] else None))
+    meal_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+
+    existing = {r['name'].strip().lower(): r['id']
+                for r in db.execute('SELECT id, name FROM persistent_ingredients').fetchall()}
+
+    new_count = 0
+    for raw in recipe['ingredients']:
+        quantity, name = recipe_import.split_ingredient(raw)
+        if not name:
+            continue
+        key = name.strip().lower()
+        if key in existing:
+            pi_id = existing[key]
+        else:
+            shareable = 0 if any(h in key for h in NON_SHARED_HINTS) else 1
+            db.execute('INSERT INTO persistent_ingredients (name, category, shareable) VALUES (?, ?, ?)',
+                       (name, 'Imported', shareable))
+            pi_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+            existing[key] = pi_id
+            new_count += 1
+        db.execute('INSERT INTO persistent_ingredient_meals (meal_id, persistent_ingredient_id, quantity) '
+                   'VALUES (?, ?, ?)', (meal_id, pi_id, quantity))
+    db.commit()
+    db.close()
+
+    total = len(recipe['ingredients'])
+    flash(f"Added “{recipe['name']}” with {total} ingredients"
+          + (f" ({new_count} new)." if new_count else "."), 'success')
+    return redirect(url_for('meal_detail', meal_id=meal_id))
 
 @app.route('/add_ingredient/<int:meal_id>', methods=['GET', 'POST'])
 def add_ingredient(meal_id):

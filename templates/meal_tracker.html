@@ -8,7 +8,11 @@
     <div class="btn-group">
         <a href="/add_meal" class="btn btn-primary">New Meal</a>
     </div>
-
+    <form method="POST" action="/import_meal" style="display:flex; gap:6px; max-width:480px; flex:1;">
+        <input type="text" name="url" class="form-control" style="font-size:13px;"
+               placeholder="Paste a recipe link to import (experimental)..." required>
+        <button type="submit" class="btn btn-outline-primary" style="font-size:13px;">Import</button>
+    </form>
 </div>
 
 {% if meals %}
