@@ -39,3 +39,6 @@ build/python-win-embed.zip
 build/runtime-good-x86_64
 build/runtime-v12-x86_64
 build/runtime-x86_64
+
+# local build logs
+build/*.log
