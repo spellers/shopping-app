@@ -323,23 +323,30 @@ def start_update():
 
 
 def _run_update(st):
-    """Background worker: download the installer, install it, restart."""
+    """Background worker: download the installer, install it, restart.
+
+    A developer checkout doesn't need the installer at all — it just
+    checks out the tag and restarts — so the (large) download only
+    happens for installed (frozen) apps.
+    """
     tag = st['latest_version']
     try:
-        data = _data_dir()
-        staging = os.path.join(data, 'updates')
-        os.makedirs(staging, exist_ok=True)
-        dest = os.path.join(staging, st['download_name'])
-
-        _set_job(state='downloading', tag=tag, progress=0.0,
-                 message='Downloading the new version…', error=None)
-        _download(st['download_url'], dest, st)
-
-        _set_job(state='installing', message='Installing the new version…',
-                 error=None)
         if getattr(sys, 'frozen', False):
+            data = _data_dir()
+            staging = os.path.join(data, 'updates')
+            os.makedirs(staging, exist_ok=True)
+            dest = os.path.join(staging, st['download_name'])
+
+            _set_job(state='downloading', tag=tag, progress=0.0,
+                     message='Downloading the new version…', error=None)
+            _download(st['download_url'], dest, st)
+
+            _set_job(state='installing', message='Installing the new version…',
+                     error=None)
             _install_frozen(dest, st)
         else:
+            _set_job(state='installing', tag=tag,
+                     message='Installing the new version…', error=None)
             _update_dev_checkout(tag)
     except Exception as exc:  # noqa: BLE001 - surfaced verbatim to the UI
         _set_job(state='error',
@@ -361,7 +368,8 @@ def _update_dev_checkout(tag):
     via the watchdog (port-based, so it also works with the Flask reloader)."""
     import socket
     app_dir = datadir.app_dir()
-    if not os.path.isdir(os.path.join(app_dir, '.git')):
+    # .git is a directory in normal checkouts but a *file* in worktrees
+    if not os.path.exists(os.path.join(app_dir, '.git')):
         raise RuntimeError(
             'This copy of the app is not a git checkout, so it cannot '
             'update itself. Use the manual download instead.')
@@ -470,6 +478,7 @@ def _spawn_watchdog(script, *args):
     is_js = script.lstrip().startswith('const')
     name = '_update_watchdog.js' if is_js else '_update_watchdog.py'
     script_path = os.path.join(_data_dir(), 'updates', name)
+    os.makedirs(os.path.dirname(script_path), exist_ok=True)
     interpreter = ([datadir.node_executable()] if is_js
                    else [sys.executable])
     with open(script_path, 'w') as fh:
