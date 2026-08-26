@@ -199,9 +199,11 @@ def test_update_routes(client, tmp_path, monkeypatch):
     assert st['update_available'] is True
     assert st['latest_version'] == 'v9.9.9'
 
-    # Banner shows on a normal page
+    # Banner shows on a normal page with the one-click "Update now" action
     page = client.get('/meal_tracker').get_data(as_text=True)
-    assert 'Update available: v9.9.9' in page
+    assert 'A new version is available: v9.9.9' in page
+    assert 'action="/updates/start"' in page
+    assert 'Update now' in page
 
     # Download redirects to the asset
     resp = client.get('/updates/download')
@@ -213,8 +215,35 @@ def test_update_routes(client, tmp_path, monkeypatch):
     page = client.get('/meal_tracker').get_data(as_text=True)
     assert 'Update available' not in page
 
-    # No banner at all when no update is known
+    # One-click update routes exist and are wired up
+    resp = client.get('/updates/progress')
+    assert resp.status_code == 200
+    assert b'Updating' in resp.data or b'updating' in resp.data.lower()
+
+    # start is a POST-only route that redirects to the progress page
+    monkeypatch.setattr(updates, 'start_update', lambda: True)
+    resp = client.post('/updates/start', follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers['Location'].endswith('/updates/progress')
+
+
+def test_update_start_refused_when_nothing_to_do(client, tmp_path, monkeypatch):
+    """With no known update, /updates/start flashes and goes back to the app."""
     monkeypatch.setenv('SHOPPING_APP_DATA', str(tmp_path / 'empty'))
     os.makedirs(tmp_path / 'empty', exist_ok=True)
+    monkeypatch.setattr(updates, 'start_update', lambda: False)
+    # No banner at all when no update is known
     page = client.get('/meal_tracker').get_data(as_text=True)
-    assert 'Update available' not in page
+    assert 'new version is available' not in page
+    resp = client.post('/updates/start', follow_redirects=True)
+    assert resp.status_code == 200
+    assert b'manually' in resp.data
+
+
+def test_progress_json_shape(client, tmp_path, monkeypatch):
+    monkeypatch.setenv('SHOPPING_APP_DATA', str(tmp_path / 'empty'))
+    os.makedirs(tmp_path / 'empty', exist_ok=True)
+    d = client.get('/updates/progress.json').get_json()
+    assert set(d) == {'job', 'status'}
+    assert d['job']['state'] == 'idle'
+    assert d['status']['update_available'] is False

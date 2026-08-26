@@ -171,14 +171,22 @@
     <div class="main-content">
         {% if update and update.update_available and not update.dismissed %}
         <div class="alert alert-primary alert-dismissible fade show" role="alert" style="background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;">
-            <strong>Update available: {{ update.latest_version }}</strong> (you have {{ update.current_version }})
-            <a href="/updates/download">Download update</a> &middot;
-            <a href="{{ update.release_page }}" target="_blank" rel="noopener">Release notes</a>
-            <form method="post" action="/updates/dismiss" style="display:inline;">
-                <input type="hidden" name="tag" value="{{ update.latest_version }}">
-                <button type="submit" class="btn btn-link btn-sm p-0" style="font-size:inherit;text-decoration:underline;">Remind me later</button>
-            </form>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;">
+                <div>
+                    <strong>A new version is available: {{ update.latest_version }}</strong>
+                    <span>(you have {{ update.current_version }})</span>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;margin-left:auto;">
+                    <form method="post" action="/updates/start" style="display:inline;">
+                        <button type="submit" class="btn btn-primary btn-sm">Update now</button>
+                    </form>
+                    <a href="{{ update.release_page }}" target="_blank" rel="noopener" style="font-size:13px;">What's new</a>
+                    <form method="post" action="/updates/dismiss" style="display:inline;">
+                        <input type="hidden" name="tag" value="{{ update.latest_version }}">
+                        <button type="submit" class="btn btn-link btn-sm p-0" style="font-size:13px;">Remind me later</button>
+                    </form>
+                </div>
+            </div>
         </div>
         {% endif %}
         {% with messages = get_flashed_messages(with_categories=true) %}

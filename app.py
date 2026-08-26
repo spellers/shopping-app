@@ -29,9 +29,33 @@ def updates_status():
     return jsonify(updates.status())
 
 
+@app.route('/updates/start', methods=['POST'])
+def updates_start():
+    """One-click update: download + install + restart, in the background."""
+    if updates.start_update():
+        return redirect(url_for('update_progress'))
+    flash('Could not start the update — the new version may not be ready. '
+          'Try again in a minute, or download it manually.', 'warning')
+    return redirect(url_for('meal_tracker'))
+
+
+@app.route('/updates/progress')
+def update_progress():
+    """Progress page for the running update (polled from JS)."""
+    return render_template('update_progress.html',
+                           job=updates.job_status(),
+                           st=updates.status())
+
+
+@app.route('/updates/progress.json')
+def update_progress_json():
+    """JSON poll target: {'job': ..., 'status': ...}."""
+    return jsonify({'job': updates.job_status(), 'status': updates.status()})
+
+
 @app.route('/updates/download')
 def updates_download():
-    """One-click update: redirect the browser to the platform installer."""
+    """Fallback: download the installer manually."""
     st = updates.status()
     if st['download_url']:
         return redirect(st['download_url'])
@@ -930,8 +954,11 @@ if __name__ == "__main__":
     import sys
     port = int(os.environ.get('PORT', '5000'))
     # Frozen installs serve with waitress; dev keeps the Flask debug server.
+    # FLASK_DEBUG=0 turns the debug reloader off (used by the self-updater's
+    # re-exec so the old process doesn't come back on top of the new one).
     if getattr(sys, 'frozen', False):
         from waitress import serve
         serve(app, host='127.0.0.1', port=port)
     else:
-        app.run(debug=True, host='127.0.0.1', port=port)
+        debug = os.environ.get('FLASK_DEBUG', '1') != '0'
+        app.run(debug=debug, use_reloader=debug, host='127.0.0.1', port=port)
