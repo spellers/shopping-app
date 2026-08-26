@@ -361,16 +361,7 @@ def remove_persistent_from_meal(meal_id, link_id):
 @app.route('/meal_tracker')
 def meal_tracker():
     db = get_db()
-    meals = db.execute('SELECT * FROM meals ORDER BY id DESC').fetchall()
-    counts = {
-        row['meal_id']: row['count']
-        for row in db.execute(
-            'SELECT meal_id, COUNT(*) AS count FROM ingredients GROUP BY meal_id'
-        ).fetchall()
-    }
-    meals = [dict(meal) for meal in meals]
-    for meal in meals:
-        meal['ingredient_count'] = counts.get(meal['id'], 0)
+    meals = [dict(m) for m in db.execute('SELECT * FROM meals ORDER BY id DESC').fetchall()]
     db.close()
     return render_template('meal_tracker.html', meals=meals)
 
