@@ -57,8 +57,6 @@
         var barwrap = document.getElementById('barwrap');
         var errorbox = document.getElementById('errorbox');
         var actions = document.getElementById('actions');
-        var busy = {{ 'true' if job.state in ('downloading','installing','restarting') else 'false' }};
-        var pollCount = 0;
 
         function backToApp() {
             // The app is coming back up (or already is): poll the root and
@@ -80,7 +78,6 @@
                 .then(function (r) { return r.json(); })
                 .then(function (d) {
                     var job = d.job;
-                    pollCount += 1;
                     if (job.state === 'downloading') {
                         spinner.style.display = 'block';
                         barwrap.style.display = '';
@@ -104,9 +101,12 @@
                             (job.manual_url ? '\n\nYou can install manually instead: ' + job.manual_url : '');
                         actions.style.display = '';
                         return;
-                    } else if (job.state === 'idle' && !busy && pollCount > 1) {
-                        // Job finished (or never started) and we are still
-                        // here: the app may be restarting — hand over.
+                    } else {
+                        // 'idle' / 'done': the job is no longer running. After
+                        // a restart the *new* process always reports 'idle'
+                        // (it has no memory of our job), so this is also how
+                        // we detect that the update completed and the app
+                        // came back up — hand over to the app.
                         backToApp();
                         return;
                     }
