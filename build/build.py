@@ -27,6 +27,8 @@ APP = 'ShoppingApp'
 
 
 def run(cmd, **kw):
+    if cmd[0] == 'wine':
+        cmd = [c.replace('\\', '/') for c in cmd]
     print('+', ' '.join(cmd))
     subprocess.run(cmd, check=True, **kw)
 
@@ -52,7 +54,9 @@ def main():
     if target == 'linux':
         pyinstaller_cmd = [os.path.join(ROOT, 'venv', 'bin', 'pyinstaller')]
     elif win_py:
-        pyinstaller_cmd = [win_py, '-m', 'PyInstaller']
+        # Cross-compile under Wine: run the Windows embeddable Python
+        # through wine (WINE_PY is the wine-visible .exe path).
+        pyinstaller_cmd = ['wine', win_py, '-m', 'PyInstaller']
     else:
         pyinstaller_cmd = [os.path.join(ROOT, 'venv', 'Scripts', 'pyinstaller.exe')]
     run(pyinstaller_cmd + ['--noconfirm', '--distpath', DIST,
