@@ -3,7 +3,11 @@
 {% block content %}
 <div class="page-header">
     <h2 style="font-weight:700; margin-bottom:20px;">Shopping List</h2>
-    <a href="/vote/{{ request.args.get('vote_id', '') }}" class="btn btn-outline-secondary">← Back to Results</a>
+    {% if request.args.get('vote_id') %}
+    <a href="/vote/{{ request.args.get('vote_id') }}/results" class="btn btn-outline-secondary">← Back to Results</a>
+    {% else %}
+    <a href="/votes" class="btn btn-outline-secondary">← Back to Voting</a>
+    {% endif %}
 </div>
 
 {% if meals %}

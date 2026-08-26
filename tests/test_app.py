@@ -821,3 +821,112 @@ def test_parse_qty_x_prefix_counts():
 def test_parse_qty_empty_defaults_to_one():
     assert tesco_module.parse_qty('') == 1
     assert tesco_module.parse_qty(None) == 1
+
+
+# --- v1.2.0 ---------------------------------------------------------------
+
+def test_seed_starts_empty_db_with_starter_meals(client):
+    db = app_module.get_db()
+    meals = db.execute('SELECT id, name FROM meals').fetchall()
+    counts = {
+        m['id']: db.execute(
+            'SELECT '
+            '(SELECT COUNT(*) FROM ingredients WHERE meal_id=?) + '
+            '(SELECT COUNT(*) FROM persistent_ingredient_meals WHERE meal_id=?) AS n',
+            (m['id'], m['id'])).fetchone()['n']
+        for m in meals
+    }
+    pis = db.execute('SELECT name FROM persistent_ingredients').fetchall()
+    db.close()
+    names = {m['name'] for m in meals}
+    assert 'Chicken Fried Rice' in names
+    assert 'Thai Red Curry' in names
+    assert len(meals) == 6
+    # every starter meal uses 4-5 ingredients total
+    for m in meals:
+        assert 4 <= counts[m['id']] <= 5, f'{m["name"]} has {counts[m["id"]]} ingredients'
+    pi_names = {p['name'] for p in pis}
+    assert {'Rice', 'Soy Sauce', 'Butter', 'Cheddar Cheese', 'Pasta'} <= pi_names
+
+
+def test_seed_does_not_run_twice(client):
+    client.post('/add_meal', data={'name': 'Extra Meal', 'description': ''},
+                follow_redirects=True)
+    response = client.get('/meal_tracker', follow_redirects=True)
+    db = app_module.get_db()
+    n = db.execute("SELECT COUNT(*) FROM meals WHERE name='Extra Meal'").fetchone()[0]
+    db.close()
+    assert n == 1  # seeded once, not re-seeded on every init
+
+
+def test_help_page_shows_version(client):
+    import updates
+    response = client.get('/help')
+    assert response.status_code == 200
+    assert updates.VERSION.encode() in response.data
+    assert b'Help' in response.data
+
+
+def test_meal_tile_has_no_delete_button(client):
+    response = client.get('/meal_tracker')
+    assert b'/delete_meal/' not in response.data
+
+
+def test_meal_detail_keeps_delete_button(client, sample_meal):
+    response = client.get(f'/meal_tracker/{sample_meal}')
+    assert response.status_code == 200
+    assert f'/delete_meal/{sample_meal}'.encode() in response.data
+
+
+def test_delete_persistent_ingredient(client):
+    response = client.get('/persistent_ingredients')
+    assert response.status_code == 200
+    db = app_module.get_db()
+    pi = db.execute('SELECT id FROM persistent_ingredients LIMIT 1').fetchone()
+    # link it to a meal so the cleanup path is exercised
+    db.execute('INSERT INTO meals (name) VALUES (? )', ('PI Link Meal',))
+    meal_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+    db.execute('INSERT INTO persistent_ingredient_meals (meal_id, persistent_ingredient_id) '
+               'VALUES (?, ?)', (meal_id, pi['id']))
+    db.commit()
+    db.close()
+
+    response = client.post(f'/delete_persistent_ingredient/{pi["id"]}',
+                           follow_redirects=True)
+    assert response.status_code == 200
+    db = app_module.get_db()
+    assert db.execute('SELECT COUNT(*) FROM persistent_ingredients WHERE id=?',
+                      (pi['id'],)).fetchone()[0] == 0
+    assert db.execute('SELECT COUNT(*) FROM persistent_ingredient_meals WHERE '
+                      'persistent_ingredient_id=?', (pi['id'],)).fetchone()[0] == 0
+    db.close()
+
+
+def test_shopping_list_back_to_results(client, sample_meal):
+    db = app_module.get_db()
+    db.execute("INSERT INTO votes (name) VALUES ('Back Vote')")
+    db.commit()
+    vote_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+    db.execute("INSERT INTO vote_options (vote_id, meal_name) VALUES (?, ?)",
+               (vote_id, 'Test Meal'))
+    db.commit()
+    db.close()
+
+    response = client.post('/create_shopping_list',
+                           data={'meal_ids': ['Test Meal'], 'vote_id': str(vote_id)},
+                           follow_redirects=True)
+    assert response.status_code == 200
+    assert b'Back to Results' in response.data
+    assert f'/vote/{vote_id}/results'.encode() in response.data
+
+    # without a vote the list falls back to the votes page
+    client.post('/shopping_list/1/delete', follow_redirects=True)
+    db = app_module.get_db()
+    for row in db.execute('SELECT id FROM shopping_list_items').fetchall():
+        db.execute('DELETE FROM shopping_list_items WHERE id=?', (row['id'],))
+    db.execute('DELETE FROM shopping_list_meals')
+    db.commit()
+    db.close()
+    response = client.get('/shopping_list')
+    assert b'Back to Voting' in response.data
+    assert b'vote_id' not in response.data

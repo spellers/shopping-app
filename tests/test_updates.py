@@ -19,15 +19,23 @@ def _no_real_network(monkeypatch):
     updates._fetch_latest with their own fake (which wins, applied later).
     """
     monkeypatch.setattr(updates, '_fetch_latest', lambda: None)
-    deadline = time.time() + 5
-    while updates._check_inflight.is_set() and time.time() < deadline:
-        time.sleep(0.02)
-    updates._check_inflight.clear()
+
+    def _wait_idle():
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            with updates._inflight_lock:
+                busy = [e for e in updates._inflight.values() if e.is_set()]
+            if not busy:
+                return
+            time.sleep(0.02)
+
+    _wait_idle()
+    with updates._inflight_lock:
+        updates._inflight.clear()
     yield
-    deadline = time.time() + 5
-    while updates._check_inflight.is_set() and time.time() < deadline:
-        time.sleep(0.02)
-    updates._check_inflight.clear()
+    _wait_idle()
+    with updates._inflight_lock:
+        updates._inflight.clear()
 
 
 def _write_cache(data_dir, tag="v9.9.9", asset_name=None, page="https://github.com/spellers/shopping-app/releases/tag/v9.9.9", stale=False):
@@ -147,23 +155,34 @@ def test_check_now_offline_no_cache(tmp_path, monkeypatch):
 
 
 def test_ensure_check_schedules_background_refresh(client, tmp_path, monkeypatch):
+    import threading
     monkeypatch.setenv('SHOPPING_APP_DATA', str(tmp_path))
     _write_cache(str(tmp_path), tag='v4.4.4', stale=True)
     results = []
+    gate = threading.Event()
 
     def fake_fetch():
         results.append(1)
+        gate.wait(2)  # hold the refresh open so the dedup check is testable
         return {'tag': 'v6.6.6', 'name': 'v6.6.6', 'page': 'https://example', 'assets': []}
 
     monkeypatch.setattr(updates, '_fetch_latest', fake_fetch)
     updates.ensure_check()
-    updates.ensure_check()  # second call must not start another thread
-    import time
-    for _ in range(100):
-        if results:
-            break
+    # Wait until the background thread is inside the (gated) fetch.
+    deadline = time.time() + 5
+    while not results and time.time() < deadline:
+        time.sleep(0.01)
+    assert results  # thread started
+    updates.ensure_check()  # must not schedule a second refresh
+    time.sleep(0.2)  # any rogue second thread would have called fetch by now
+    gate.set()
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        with updates._inflight_lock:
+            if not any(e.is_set() for e in updates._inflight.values()):
+                break
         time.sleep(0.02)
-    assert results == [1]
+    assert results == [1]  # exactly one refresh happened
     assert updates.status()['latest_version'] == 'v6.6.6'
 
 

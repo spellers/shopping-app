@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 
 import datadir
 
-VERSION = "1.0.1"
+VERSION = "1.2.0"
 
 REPO = "spellers/shopping-app"
 RELEASE_API = "https://api.github.com/repos/%s/releases/latest" % REPO
@@ -28,11 +28,19 @@ DISMISS_UNTIL = timedelta(days=7)
 HTTP_TIMEOUT = 5
 
 _cache_lock = threading.Lock()
-_check_inflight = threading.Event()
+# One inflight marker per data dir, so a refresh for one location never
+# suppresses a refresh for another (and threads write to the dir they
+# were scheduled for, not wherever the data dir resolves later).
+_inflight = {}
+_inflight_lock = threading.Lock()
 
 
 def _cache_file():
     return os.path.join(_data_dir(), "update_check.json")
+
+
+def _cache_path(data_dir):
+    return os.path.join(data_dir, "update_check.json")
 
 
 def _dismiss_file():
@@ -129,8 +137,10 @@ def _load_cached():
     return data, datetime.now() - checked_at < CHECK_INTERVAL
 
 
-def check_now():
+def check_now(data_dir=None):
     """Synchronously refresh the cache (used at startup and by tests)."""
+    if data_dir is None:
+        data_dir = _data_dir()
     with _cache_lock:
         release = _fetch_latest()
         checked_at = datetime.now()
@@ -138,10 +148,10 @@ def check_now():
             payload = dict(release)
         else:
             # Offline: keep serving a previously known release, if any.
-            old, _ = _load_cached()
+            old = _read_json(_cache_path(data_dir))
             payload = dict(old) if old else {'error': 'offline'}
         payload['checked_at'] = checked_at.isoformat()
-        _write_json(_cache_file(), payload)
+        _write_json(_cache_path(data_dir), payload)
         return payload
 
 
@@ -152,14 +162,23 @@ def ensure_check():
     immediately. Otherwise a background thread refreshes the cache.
     """
     _data, fresh = _load_cached()
-    if fresh or _check_inflight.is_set():
+    if fresh:
         return
-    _check_inflight.set()
+    data_dir = _data_dir()
+    with _inflight_lock:
+        ev = _inflight.get(data_dir)
+        if ev is None:
+            ev = threading.Event()
+            _inflight[data_dir] = ev
+        if ev.is_set():
+            return
+        ev.set()
+
     def _work():
         try:
-            check_now()
+            check_now(data_dir)
         finally:
-            _check_inflight.clear()
+            ev.clear()
     threading.Thread(target=_work, daemon=True).start()
 
 

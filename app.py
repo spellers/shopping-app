@@ -129,7 +129,70 @@ def init_db():
     except sqlite3.OperationalError as e:
         db.rollback()
     _migrate(db)
+    _seed(db)
     db.close()
+
+
+def _seed(db):
+    """First-run starter content: a handful of simple meals (4-5 ingredients
+    each) plus shared pantry staples. Only runs on an empty database —
+    existing users (or anyone who deleted the seeds) are left alone."""
+    if db.execute('SELECT COUNT(*) FROM meals').fetchone()[0]:
+        return
+
+    # Shared pantry staples, linked to the meals that use them.
+    pantry = {
+        'Rice': 1,          # shared: one bag covers all meals
+        'Soy Sauce': 1,
+        'Butter': 1,
+        'Cheddar Cheese': 1,
+        'Pasta': 1,
+    }
+    pi_ids = {}
+    for name, shareable in pantry.items():
+        db.execute(
+            'INSERT INTO persistent_ingredients (name, category, shareable) VALUES (?, ?, ?)',
+            (name, 'Pantry', shareable)
+        )
+        pi_ids[name] = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+
+    # name -> [ (ingredient name, quantity) ... ]  plus 'persistent' links.
+    meals = [
+        ('Chicken Fried Rice', 'Sizzling wok classic with egg and spring onions.',
+         [('Chicken Breast', '250g'), ('Eggs', '3'), ('Spring Onions', '2')],
+         ['Rice']),
+        ('Thai Red Curry', 'Chicken curry in coconut milk with red curry paste.',
+         [('Chicken Breast', '300g'), ('Red Curry Paste', '2 tbsp'), ('Coconut Milk', '400ml')],
+         ['Rice']),
+        ('Tuna Melt Toastie', 'Tuna and melted cheese on buttered bread.',
+         [('Tuna in Brine', '2 cans'), ('White Bread', '4 slices'), ('Lemon', '1')],
+         ['Cheddar Cheese', 'Butter']),
+        ('Jacket Potatoes with Beans and Cheese', 'Big roast potatoes topped with butter, beans and cheese.',
+         [('Potatoes', '4'), ('Baked Beans', '1 tin')],
+         ['Butter', 'Cheddar Cheese']),
+        ('Pasta Bolognese', 'Classic spag bol with beef and tomatoes.',
+         [('Beef Mince', '400g'), ('Tomatoes Chopped', '1 tin'), ('Onions', '1'), ('Garlic', '2 cloves')],
+         ['Pasta']),
+        ('Egg Fried Rice', 'Leftover rice tossed with egg, soy sauce and spring onions.',
+         [('Eggs', '3'), ('Spring Onions', '2'), ('Sesame Oil', '1 tsp')],
+         ['Rice', 'Soy Sauce']),
+    ]
+
+    for meal_name, description, ingredients, persistent in meals:
+        db.execute('INSERT INTO meals (name, description) VALUES (?, ?)', (meal_name, description))
+        meal_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+        for ing_name, quantity in ingredients:
+            db.execute(
+                'INSERT INTO ingredients (meal_id, name, quantity) VALUES (?, ?, ?)',
+                (meal_id, ing_name, quantity)
+            )
+        for pi_name in persistent:
+            db.execute(
+                'INSERT INTO persistent_ingredient_meals (meal_id, persistent_ingredient_id) '
+                'VALUES (?, ?)',
+                (meal_id, pi_ids[pi_name])
+            )
+    db.commit()
 
 
 NON_SHARED_HINTS = (
@@ -237,6 +300,10 @@ def _refresh_product_cache(sku, name_hint=None):
 @app.route('/')
 def index():
     return redirect('/meal_tracker')
+
+@app.route('/help')
+def help_page():
+    return render_template('help.html', version=updates.VERSION)
 
 
 @app.route('/meal_tracker/<int:meal_id>/add_persistent', methods=['POST'])
@@ -380,6 +447,16 @@ def delete_ingredient(ingredient_id):
     db.close()
     flash('Ingredient deleted!', 'success')
     return redirect('/meal_tracker')
+
+@app.route('/delete_persistent_ingredient/<int:ingredient_id>', methods=['POST'])
+def delete_persistent_ingredient(ingredient_id):
+    db = get_db()
+    db.execute('DELETE FROM persistent_ingredient_meals WHERE persistent_ingredient_id=?', (ingredient_id,))
+    db.execute('DELETE FROM persistent_ingredients WHERE id=?', (ingredient_id,))
+    db.commit()
+    db.close()
+    flash('Ingredient deleted!', 'success')
+    return redirect('/persistent_ingredients')
 
 @app.route('/persistent_ingredients', methods=['GET', 'POST'])
 def persistent_ingredients():
@@ -604,6 +681,8 @@ def create_shopping_list():
     db.commit()
     db.close()
     flash(f'Shopping list created with {len(agg)} items!', 'success')
+    if vote_id:
+        return redirect(url_for('shopping_list_get', vote_id=vote_id))
     return redirect(url_for('shopping_list_get'))
 @app.route('/shopping_list/<int:item_id>/delete', methods=['POST'])
 def delete_shopping(item_id):

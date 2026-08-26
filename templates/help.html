@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Help - Meal Planner{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h2>Help</h2>
+    <span class="badge bg-secondary" style="font-size:0.85rem;">Version {{ version }}</span>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 style="font-weight:600; margin-bottom:10px;">Getting started</h5>
+        <ol style="line-height:1.9; margin-bottom:0;">
+            <li><strong>Plan your meals</strong> &mdash; the <a href="/meal_tracker">Meal Tracker</a> shows this week&rsquo;s meals as tiles. Click a tile to open it and add or remove ingredients. New installs come with a few simple starter meals &mdash; edit or delete them to make the app your own.</li>
+            <li><strong>Pantry staples</strong> &mdash; things you keep stocked (rice, oil, soy sauce) go in <a href="/persistent_ingredients">Persistent Ingredients</a> rather than on each meal. Mark them <em>Shared</em> if one unit covers every meal, or <em>Per meal</em> if each meal needs its own.</li>
+            <li><strong>Vote on dinner</strong> &mdash; create a <a href="/votes">Vote</a> with a few meal options, share the page, and everyone picks up to three favourites. The results screen shows who&rsquo;s voting and the current tally.</li>
+            <li><strong>Build your shopping list</strong> &mdash; from the vote results, select the winning meals and hit <em>Create shopping list</em>. Ingredients are combined automatically &mdash; shared goods appear once, per-meal goods are multiplied by the number of meals that use them.</li>
+            <li><strong>Buy and tick off</strong> &mdash; on the <a href="/shopping_list">Shopping List</a> page, tick items as you shop. Matched Tesco products show their price, and you can send the whole list to your Tesco basket in one click.</li>
+        </ol>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <h5 style="font-weight:600; margin-bottom:10px;">A few things worth knowing</h5>
+        <ul style="line-height:1.9; margin-bottom:0;">
+            <li>The <strong>Tesco</strong> integration needs you to sign in once with your Tesco account (a browser window opens). If the connection drops after a system restart, just sign in again from the Tesco page.</li>
+            <li><strong>Updating:</strong> the app checks for new versions in the background. When one is available, a banner appears at the top of the page &mdash; download it and run the installer; your data is kept.</li>
+            <li>Your data (meals, votes, shopping list) is stored locally on this computer, so everything works offline except Tesco product searches.</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}

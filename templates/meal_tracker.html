@@ -22,11 +22,6 @@
             <p class="card-text text-muted mb-2" style="font-size:0.85rem; margin-left:24px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">{{ meal.description }}</p>
             {% endif %}
         </div>
-        <div class="card-footer" style="text-align:right;">
-            <form method="POST" action="/delete_meal/{{ meal.id }}" onsubmit="return confirm('Delete meal?')">
-                <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
-            </form>
-        </div>
     </div>
 </div>
 {% endfor %}
