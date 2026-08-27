@@ -29,6 +29,15 @@ SESSION_FILE = os.path.expanduser('~/.basketeer/session.json')
 _login_state = {'running': False}
 
 
+def _no_window():
+    """Subprocess creationflags so a CLI child doesn't pop up its own
+    console window on Windows (a windowless frozen app otherwise gets a
+    console per child). Harmless on Linux."""
+    if os.name == 'nt':
+        return getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+    return 0
+
+
 class TescoError(Exception):
     pass
 
@@ -46,7 +55,7 @@ def _run(args, timeout=90):
         proc = subprocess.run(
             [NODE, CLI_JS] + args,
             capture_output=True, text=True, timeout=timeout, cwd=BASE_DIR,
-            env=_display_env(),
+            env=_display_env(), creationflags=_no_window(),
         )
     except subprocess.TimeoutExpired:
         raise TescoError('Tesco API timed out')
@@ -196,7 +205,7 @@ def login():
             proc = subprocess.run(
                 [NODE, LOGIN_SCRIPT],
                 capture_output=True, text=True, timeout=620, cwd=BASE_DIR,
-                env=_display_env(),
+                env=_display_env(), creationflags=_no_window(),
             )
             _login_state['ok'] = proc.returncode == 0 and os.path.exists(SESSION_FILE)
             _login_state['output'] = (proc.stdout or proc.stderr or '').strip()[-500:]

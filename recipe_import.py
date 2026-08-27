@@ -12,6 +12,7 @@ This module only fetches and parses; it never touches the database.
 """
 import html as html_lib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -76,11 +77,16 @@ def headless_html(url, timeout=35):
         raise RecipeError('No headless browser available on this machine.')
     try:
         with tempfile.TemporaryDirectory() as td:
+            # CREATE_NO_WINDOW: a windowless frozen app would otherwise
+            # spawn a console window for the child process (Windows only).
+            kwargs = {}
+            if os.name == 'nt':
+                kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
             proc = subprocess.run(
                 [chrome, '--headless=new', '--no-first-run', '--no-default-browser-check',
                  '--disable-gpu', f'--user-data-dir={td}',
                  '--virtual-time-budget=15000', '--dump-dom', url],
-                capture_output=True, timeout=timeout + 15)
+                capture_output=True, timeout=timeout + 15, **kwargs)
         body = proc.stdout.decode('utf-8', 'replace')
         if len(body) < 500:
             raise RecipeError('The page blocked automated access.')
