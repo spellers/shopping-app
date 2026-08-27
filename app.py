@@ -6,6 +6,7 @@ import tesco
 import datadir
 import recipe_import
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, g
+import socket
 import sys
 import updates
 
@@ -69,6 +70,35 @@ def updates_dismiss():
     """Hide the update banner for a week."""
     updates.dismiss(request.form.get('tag') or updates.status().get('latest_version'))
     return redirect(request.referrer or url_for('meal_tracker'))
+
+
+_lan_ip = None
+def lan_base_url():
+    """Base URL other devices on the network can reach this app at.
+
+    Uses the machine's LAN IP rather than localhost so copied links
+    (e.g. vote links) work for everyone, not just this machine.
+    """
+    global _lan_ip
+    if _lan_ip is None:
+        ip = None
+        try:
+            # UDP connect never sends packets; getsockname() returns the
+            # interface that would be used to reach the outside world.
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(('8.8.8.8', 80))
+            ip = s.getsockname()[0]
+            s.close()
+        except OSError:
+            ip = None
+        if not ip or ip.startswith('169.254.'):  # no route / link-local
+            try:
+                ip = socket.gethostbyname(socket.gethostname())
+            except OSError:
+                ip = None
+        _lan_ip = ip or 'localhost'
+    port = int(os.environ.get('PORT', '5000'))
+    return f'http://{_lan_ip}:{port}'
 
 
 def get_db():
@@ -733,7 +763,8 @@ def votes():
     votes_list = db.execute('SELECT * FROM votes ORDER BY id DESC').fetchall()
     db.close()
     created_id = request.args.get('created', type=int)
-    return render_template('votes.html', votes_list=votes_list, meals=meals, created_id=created_id)
+    return render_template('votes.html', votes_list=votes_list, meals=meals,
+                           created_id=created_id, base_url=lan_base_url())
 
 @app.route('/vote/<int:vote_id>/delete', methods=['POST'])
 def delete_vote(vote_id):
@@ -1227,4 +1258,4 @@ if __name__ == "__main__":
         serve(app, host='0.0.0.0', port=port)
     else:
         debug = os.environ.get('FLASK_DEBUG', '1') != '0'
-        app.run(debug=debug, use_reloader=debug, host='127.0.0.1', port=port)
+        app.run(debug=debug, use_reloader=debug, host='0.0.0.0', port=port)

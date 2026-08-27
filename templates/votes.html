@@ -51,8 +51,9 @@
 <p class="text-muted">No votes yet.</p>
 {% endif %}
 <script>
+const BASE = {{ base_url | tojson }};
 function copyVoteLink(link, btn) {
-    const full = new URL(link, window.location.origin).href;
+    const full = new URL(link, BASE).href;
     navigator.clipboard.writeText(full).then(() => {
         if (btn) {
             const old = btn.textContent;
