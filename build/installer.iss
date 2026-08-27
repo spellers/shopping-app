@@ -3,7 +3,7 @@
 ; (expects the PyInstaller onedir output in dist\ShoppingApp)
 
 #define AppName "Shopping App"
-#define AppVersion "1.4.0"
+#define AppVersion "1.4.1"
 #define AppPublisher "Simon Spellman"
 #define SrcDir "..\dist\ShoppingApp"
 
