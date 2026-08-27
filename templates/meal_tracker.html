@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Meal Planner{% endblock %}
+{% block title %}Meals{% endblock %}
 {% block content %}
 
-<h2 style="font-weight:700; margin-bottom:20px; font-size:1.8rem;">Meal Planner</h2>
+<h2 style="font-weight:700; margin-bottom:20px; font-size:1.8rem;">Meals</h2>
 
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
     <div class="btn-group">
@@ -15,6 +15,17 @@
     </form>
 </div>
 
+{% if categories %}
+<div class="mb-3" style="font-size:13px;">
+    <a href="{{ url_for('meal_tracker') }}"
+       class="btn btn-sm {% if not active_category %}btn-primary{% else %}btn-outline-primary{% endif %}">All</a>
+    {% for cat in categories %}
+    <a href="{{ url_for('meal_tracker', category=cat) }}"
+       class="btn btn-sm {% if active_category == cat %}btn-primary{% else %}btn-outline-primary{% endif %}">{{ cat }}</a>
+    {% endfor %}
+</div>
+{% endif %}
+
 {% if meals %}
 <div class="row">
 {% for meal in meals %}
@@ -26,7 +37,11 @@
             <p class="card-text text-muted mb-2" style="font-size:0.85rem; margin-left:24px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">{{ meal.description }}</p>
             {% endif %}
         </div>
-        <div class="card-footer" style="padding: 1.25rem 1.25rem;"></div>
+        <div class="card-footer" style="padding: 0.5rem 1rem; min-height:40px; box-sizing:border-box; display:flex; gap:4px; flex-wrap:wrap; align-content:center;">
+            {% for cat in meal.categories %}
+            <span class="badge bg-primary-subtle text-primary">{{ cat }}</span>
+            {% endfor %}
+        </div>
     </div>
 </div>
 {% endfor %}
@@ -34,8 +49,10 @@
 {% else %}
 <div class="card">
     <div class="card-body text-center py-5">
-        <h5 class="text-muted">No meals yet</h5>
-        <a href="/add_meal" class="btn btn-primary mt-2">Add your first meal</a>
+        <h5 class="text-muted">
+            {% if active_category %}No meals in "{{ active_category }}"{% else %}No meals yet{% endif %}
+        </h5>
+        <a href="/add_meal" class="btn btn-primary mt-2">Add a meal</a>
     </div>
 </div>
 {% endif %}

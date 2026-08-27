@@ -49,7 +49,7 @@
                     {% if item.tesco %}
                     <span class="badge bg-success-subtle text-success">Tesco &pound;{{ '%.2f' % (item.tesco.price or 0) }}</span>
                     {% else %}
-                    <span class="badge bg-light text-muted">unmatched</span>
+                    <span class="badge text-muted border">unmatched</span>
                     {% endif %}
                 </div>
             </div>

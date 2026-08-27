@@ -1,28 +1,39 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Updating… — Meal Planner</title>
+    <script>
+        // Match the app's theme choice (dark is the default).
+        try { if (localStorage.getItem('theme') === 'light') {
+            document.documentElement.setAttribute('data-bs-theme', 'light');
+        } } catch (e) {}
+    </script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        :root { --primary: #4361ee; --bg: #f8f9fa; --text: #212529; --muted: #6c757d; }
+        :root { --primary: #4361ee; --bg: #12141a; --text: #e6e8ee; --muted: #9aa1ad;
+                --card-bg: #1c1f27; --border: #2a2e39; }
+        [data-bs-theme="light"] { --bg: #f8f9fa; --text: #212529; --muted: #6c757d;
+                --card-bg: #ffffff; --border: #e9ecef; }
         body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text);
                display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
-        .card-box { background: #fff; border: 1px solid #e9ecef; border-radius: 14px;
-                    padding: 32px 40px; width: 440px; box-shadow: 0 4px 18px rgba(0,0,0,.06); text-align: center; }
+        .card-box { background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px;
+                    padding: 32px 40px; width: 440px; box-shadow: 0 4px 18px rgba(0,0,0,.35); text-align: center; }
+        [data-bs-theme="light"] .card-box { box-shadow: 0 4px 18px rgba(0,0,0,.06); }
         h1 { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
         .sub { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
         .progress { height: 12px; }
         .pct { font-size: 13px; color: var(--muted); margin-top: 8px; min-height: 18px; }
         .msg { font-size: 14px; margin-top: 14px; min-height: 20px; }
-        .spinner { width: 42px; height: 42px; margin: 0 auto 14px; border: 4px solid #e9ecef;
+        .spinner { width: 42px; height: 42px; margin: 0 auto 14px; border: 4px solid var(--border);
                    border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .error { background: #fdecec; border: 1px solid #f5c2c7; color: #842029;
+        .error { background: #3a1f24; border: 1px solid #6b2f38; color: #f2a3ad;
                  border-radius: 10px; padding: 14px 16px; font-size: 13px; text-align: left;
                  white-space: pre-wrap; margin-bottom: 16px; }
+        [data-bs-theme="light"] .error { background: #fdecec; border-color: #f5c2c7; color: #842029; }
         a { color: var(--primary); }
     </style>
 </head>

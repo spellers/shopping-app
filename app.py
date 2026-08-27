@@ -5,7 +5,7 @@ from datetime import datetime
 import tesco
 import datadir
 import recipe_import
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, g
 import sys
 import updates
 
@@ -72,9 +72,23 @@ def updates_dismiss():
 
 
 def get_db():
-    db = sqlite3.connect(datadir.db_path())
+    db = sqlite3.connect(datadir.db_path(), timeout=10)
     db.row_factory = sqlite3.Row
+    # Remember the connection so teardown_appcontext can close it if a
+    # request errors out before the route gets a chance to. (Startup calls
+    # like init_db() run outside a request context, where g is unbound.)
+    try:
+        if not hasattr(g, 'db'):
+            g.db = db
+    except RuntimeError:
+        pass
     return db
+
+@app.teardown_appcontext
+def close_db(exception=None):
+    db = g.pop('db', None)
+    if db is not None:
+        db.close()
 
 def init_db():
     db = get_db()
@@ -136,6 +150,12 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             shopping_list_id INTEGER NOT NULL,
             meal_id INTEGER NOT NULL,
+            FOREIGN KEY (meal_id) REFERENCES meals(id)
+        );
+        CREATE TABLE IF NOT EXISTS meal_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            meal_id INTEGER NOT NULL,
+            category TEXT NOT NULL,
             FOREIGN KEY (meal_id) REFERENCES meals(id)
         );
         CREATE TABLE IF NOT EXISTS tesco_products (
@@ -206,6 +226,7 @@ def _seed(db):
     for meal_name, description, ingredients, persistent in meals:
         db.execute('INSERT INTO meals (name, description) VALUES (?, ?)', (meal_name, description))
         meal_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+        db.execute('INSERT INTO meal_categories (meal_id, category) VALUES (?, ?)', (meal_id, 'Demo'))
         for ing_name, quantity in ingredients:
             db.execute(
                 'INSERT INTO ingredients (meal_id, name, quantity) VALUES (?, ?, ?)',
@@ -224,6 +245,17 @@ NON_SHARED_HINTS = (
     'chicken', 'beef', 'mince', 'pork', 'lamb', 'mutton', 'bacon', 'sausage',
     'fish', 'prawn', 'shrimp', 'salmon', 'cod', 'egg', 'cheese', 'turkey',
     'steak', 'fillet', 'ham', 'game',
+)
+
+# The starter meals seeded on first run; tagged with a 'Demo' category so the
+# category feature is visible out of the box (see _seed / _migrate).
+DEMO_MEAL_NAMES = (
+    'Chicken Fried Rice',
+    'Thai Red Curry',
+    'Tuna Melt Toastie',
+    'Jacket Potatoes with Beans and Cheese',
+    'Pasta Bolognese',
+    'Egg Fried Rice',
 )
 
 
@@ -253,6 +285,20 @@ def _migrate(db):
             for row in db.execute('SELECT id, name FROM ' + table).fetchall():
                 if any(h in (row['name'] or '').lower() for h in NON_SHARED_HINTS):
                     db.execute('UPDATE ' + table + ' SET shareable=0 WHERE id=?', (row['id'],))
+    # One-off: tag the starter (demo) meals with a 'Demo' category so the
+    # category feature is visible on existing installs. Idempotent — only
+    # adds where the meal doesn't already carry a 'Demo' category.
+    # Case-insensitive match so renamed/retyped demo meals are still tagged.
+    for name in DEMO_MEAL_NAMES:
+        row = db.execute('SELECT id FROM meals WHERE name=? COLLATE NOCASE', (name,)).fetchone()
+        if not row:
+            continue
+        has = db.execute(
+            'SELECT 1 FROM meal_categories WHERE meal_id=? AND category=?',
+            (row['id'], 'Demo')).fetchone()
+        if not has:
+            db.execute('INSERT INTO meal_categories (meal_id, category) VALUES (?, ?)',
+                       (row['id'], 'Demo'))
     db.commit()
 
 
@@ -363,8 +409,17 @@ def remove_persistent_from_meal(meal_id, link_id):
 def meal_tracker():
     db = get_db()
     meals = [dict(m) for m in db.execute('SELECT * FROM meals ORDER BY id DESC').fetchall()]
+    for meal in meals:
+        meal['categories'] = _meal_categories(db, meal['id'])
+
+    category = (request.args.get('category') or '').strip()
+    all_categories = [r['category'] for r in db.execute(
+        'SELECT DISTINCT category FROM meal_categories ORDER BY category').fetchall()]
+    if category:
+        meals = [m for m in meals if category in m['categories']]
     db.close()
-    return render_template('meal_tracker.html', meals=meals)
+    return render_template('meal_tracker.html', meals=meals,
+                           categories=all_categories, active_category=category)
 
 @app.route('/meal_tracker/<int:meal_id>')
 def meal_detail(meal_id):
@@ -393,6 +448,29 @@ def meal_detail(meal_id):
     db.close()
     return render_template('meal_detail.html', meal=meal, ingredients=ingredients, persistent_links=persistent_links, all_persistent=all_persistent)
 
+def _parse_categories(raw):
+    """Split a comma-separated category string into clean, unique values."""
+    cats = []
+    for part in (raw or '').split(','):
+        c = part.strip()
+        if c and c not in cats:
+            cats.append(c)
+    return cats
+
+
+def _set_meal_categories(db, meal_id, categories):
+    """Replace a meal's category set (join table)."""
+    db.execute('DELETE FROM meal_categories WHERE meal_id=?', (meal_id,))
+    for c in categories:
+        db.execute('INSERT INTO meal_categories (meal_id, category) VALUES (?, ?)', (meal_id, c))
+
+
+def _meal_categories(db, meal_id):
+    return [r['category'] for r in db.execute(
+        'SELECT category FROM meal_categories WHERE meal_id=? ORDER BY category',
+        (meal_id,)).fetchall()]
+
+
 @app.route('/add_meal', methods=['GET', 'POST'])
 def add_meal():
     if request.method == 'POST':
@@ -401,6 +479,8 @@ def add_meal():
         if name:
             db = get_db()
             db.execute('INSERT INTO meals (name, description) VALUES (?, ?)', (name, description))
+            meal_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+            _set_meal_categories(db, meal_id, _parse_categories(request.form.get('categories')))
             db.commit()
             db.close()
             flash('Meal added!', 'success')
@@ -417,17 +497,20 @@ def edit_meal(meal_id):
     if request.method == 'POST':
         db.execute('UPDATE meals SET name=?, description=? WHERE id=?',
                    (request.form['name'].strip(), request.form.get('description', '').strip(), meal_id))
+        _set_meal_categories(db, meal_id, _parse_categories(request.form.get('categories')))
         db.commit()
         db.close()
         flash('Meal updated!', 'success')
         return redirect(url_for('meal_detail', meal_id=meal_id))
+    categories = _meal_categories(db, meal_id)
     db.close()
-    return render_template('edit_meal.html', meal=meal)
+    return render_template('edit_meal.html', meal=meal, categories=', '.join(categories))
 
 @app.route('/delete_meal/<int:meal_id>', methods=['POST'])
 def delete_meal(meal_id):
     db = get_db()
     db.execute('DELETE FROM ingredients WHERE meal_id=?', (meal_id,))
+    db.execute('DELETE FROM meal_categories WHERE meal_id=?', (meal_id,))
     db.execute('DELETE FROM meals WHERE id=?', (meal_id,))
     db.commit()
     db.close()
@@ -528,6 +611,20 @@ def delete_persistent_ingredient(ingredient_id):
     flash('Ingredient deleted!', 'success')
     return redirect('/persistent_ingredients')
 
+@app.route('/rename_persistent_ingredient/<int:ingredient_id>', methods=['POST'])
+def rename_persistent_ingredient(ingredient_id):
+    """Rename a persistent ingredient (tidying up imported names etc.)."""
+    new_name = (request.form.get('name') or '').strip()
+    if not new_name:
+        flash('Name cannot be empty.', 'warning')
+        return redirect('/persistent_ingredients')
+    db = get_db()
+    db.execute('UPDATE persistent_ingredients SET name=? WHERE id=?', (new_name, ingredient_id))
+    db.commit()
+    db.close()
+    flash('Ingredient renamed.', 'success')
+    return redirect('/persistent_ingredients')
+
 @app.route('/persistent_ingredients', methods=['GET', 'POST'])
 def persistent_ingredients():
     if request.method == 'POST':
@@ -542,9 +639,74 @@ def persistent_ingredients():
         flash('Ingredient added!', 'success')
         return redirect('/persistent_ingredients')
     db = get_db()
-    ingredients = db.execute('SELECT * FROM persistent_ingredients ORDER BY id DESC').fetchall()
+    category = (request.args.get('category') or '').strip()
+    if category:
+        ingredients = db.execute('SELECT * FROM persistent_ingredients WHERE category=? ORDER BY id DESC',
+                                 (category,)).fetchall()
+    else:
+        ingredients = db.execute('SELECT * FROM persistent_ingredients ORDER BY id DESC').fetchall()
+    categories = [r['category'] for r in db.execute(
+        'SELECT DISTINCT category FROM persistent_ingredients WHERE category IS NOT NULL AND category != "" '
+        'ORDER BY category').fetchall()]
     db.close()
-    return render_template('persistent_ingredients.html', ingredients=ingredients)
+    return render_template('persistent_ingredients.html', ingredients=ingredients,
+                           categories=categories, active_category=category)
+
+
+def _sku_conflict(db, sku, ingredient_id, table):
+    """Return the row of a *different* ingredient in `table` that already uses `sku`."""
+    return db.execute(
+        'SELECT * FROM ' + table + ' WHERE tesco_sku=? AND id != ? LIMIT 1',
+        (sku, ingredient_id)).fetchone()
+
+
+@app.route('/merge_confirm/<int:keep_id>/<int:drop_id>')
+def merge_confirm(keep_id, drop_id):
+    """Confirmation page: ask whether to merge two ingredients that share a Tesco SKU."""
+    db = get_db()
+    keep = db.execute('SELECT * FROM persistent_ingredients WHERE id=?', (keep_id,)).fetchone()
+    drop = db.execute('SELECT * FROM persistent_ingredients WHERE id=?', (drop_id,)).fetchone()
+    db.close()
+    if not keep or not drop:
+        flash('Ingredient not found.', 'warning')
+        return redirect(url_for('persistent_ingredients'))
+    db = get_db()
+    keep_links = db.execute('SELECT COUNT(*) FROM persistent_ingredient_meals WHERE persistent_ingredient_id=?',
+                            (keep_id,)).fetchone()[0]
+    drop_links = db.execute('SELECT COUNT(*) FROM persistent_ingredient_meals WHERE persistent_ingredient_id=?',
+                            (drop_id,)).fetchone()[0]
+    db.close()
+    return render_template('merge_confirm.html', keep=keep, drop=drop,
+                           keep_links=keep_links, drop_links=drop_links)
+
+
+@app.route('/merge_persistent_ingredient/<int:keep_id>/<int:drop_id>', methods=['POST'])
+def merge_persistent_ingredient(keep_id, drop_id):
+    """Merge one persistent ingredient into another: meal links move to the
+    kept ingredient, the kept one takes the SKU, and the merged one is removed."""
+    db = get_db()
+    keep = db.execute('SELECT * FROM persistent_ingredients WHERE id=?', (keep_id,)).fetchone()
+    drop = db.execute('SELECT * FROM persistent_ingredients WHERE id=?', (drop_id,)).fetchone()
+    if not keep or not drop:
+        db.close()
+        flash('Ingredient not found.', 'warning')
+        return redirect('/persistent_ingredients')
+    if not keep['tesco_sku'] and drop['tesco_sku']:
+        db.execute('UPDATE persistent_ingredients SET tesco_sku=? WHERE id=?', (drop['tesco_sku'], keep_id))
+    # Move each meal link of the dropped ingredient to the kept one (no duplicates).
+    for link in db.execute('SELECT * FROM persistent_ingredient_meals WHERE persistent_ingredient_id=?', (drop_id,)).fetchall():
+        existing = db.execute('SELECT id FROM persistent_ingredient_meals WHERE meal_id=? AND persistent_ingredient_id=?',
+                              (link['meal_id'], keep_id)).fetchone()
+        if not existing:
+            db.execute('INSERT INTO persistent_ingredient_meals (meal_id, persistent_ingredient_id, quantity) '
+                       'SELECT meal_id, ?, quantity FROM persistent_ingredient_meals WHERE id=?',
+                       (keep_id, link['id']))
+    db.execute('DELETE FROM persistent_ingredient_meals WHERE persistent_ingredient_id=?', (drop_id,))
+    db.execute('DELETE FROM persistent_ingredients WHERE id=?', (drop_id,))
+    db.commit()
+    db.close()
+    flash(f'Merged into "{keep["name"]}".', 'success')
+    return redirect('/persistent_ingredients')
 
 @app.route('/votes', methods=['GET', 'POST'])
 def votes():
@@ -559,18 +721,32 @@ def votes():
             vote_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
             meal_ids = request.form.getlist('meal_ids')
             for meal_id in meal_ids:
-                meal_name = db.execute('SELECT name FROM meals WHERE id=?', (int(meal_id),)).fetchone()['name']
-                if meal_name:
-                    db.execute('INSERT INTO vote_options (vote_id, meal_name) VALUES (?, ?)', (vote_id, meal_name))
+                row = db.execute('SELECT name FROM meals WHERE id=?', (int(meal_id),)).fetchone()
+                if row:
+                    db.execute('INSERT INTO vote_options (vote_id, meal_name) VALUES (?, ?)', (vote_id, row['name']))
             db.commit()
             db.close()
-            flash('Vote created!', 'success')
-            return redirect('/votes')
+            flash('Vote created — link copied to your clipboard.', 'success')
+            return redirect(f'/votes?created={vote_id}')
     db = get_db()
     meals = db.execute('SELECT * FROM meals ORDER BY name').fetchall()
     votes_list = db.execute('SELECT * FROM votes ORDER BY id DESC').fetchall()
     db.close()
-    return render_template('votes.html', votes_list=votes_list, meals=meals)
+    created_id = request.args.get('created', type=int)
+    return render_template('votes.html', votes_list=votes_list, meals=meals, created_id=created_id)
+
+@app.route('/vote/<int:vote_id>/delete', methods=['POST'])
+def delete_vote(vote_id):
+    db = get_db()
+    vote = db.execute('SELECT name FROM votes WHERE id=?', (vote_id,)).fetchone()
+    if vote:
+        db.execute('DELETE FROM vote_votes WHERE vote_id=?', (vote_id,))
+        db.execute('DELETE FROM vote_options WHERE vote_id=?', (vote_id,))
+        db.execute('DELETE FROM votes WHERE id=?', (vote_id,))
+        db.commit()
+        flash(f'Vote "{vote["name"]}" deleted.', 'success')
+    db.close()
+    return redirect('/votes')
 
 @app.route('/vote/<int:vote_id>')
 def vote_detail(vote_id):
@@ -872,9 +1048,12 @@ def tesco_select_product(ingredient_id, kind):
     if not row:
         db.close()
         return 'Ingredient not found', 404
+    conflict = _sku_conflict(db, sku, ingredient_id, 'persistent_ingredients')
     db.execute('UPDATE persistent_ingredients SET tesco_sku=? WHERE id=?', (sku, ingredient_id))
     db.commit()
     db.close()
+    if conflict:
+        return redirect(url_for('merge_confirm', keep_id=ingredient_id, drop_id=conflict['id']))
     flash(f"Matched \"{title or sku}\"", 'success')
     return redirect(url_for('persistent_ingredients'))
 
@@ -921,7 +1100,12 @@ def tesco_select_sku(ingredient_id, kind):
         title, lookup_failed = sku, True
     db.execute(f'UPDATE {table} SET tesco_sku=? WHERE id=?', (sku, ingredient_id))
     db.commit()
+    conflict = None
+    if table == 'persistent_ingredients':
+        conflict = _sku_conflict(db, sku, ingredient_id, 'persistent_ingredients')
     db.close()
+    if conflict:
+        return redirect(url_for('merge_confirm', keep_id=ingredient_id, drop_id=conflict['id']))
     if lookup_failed:
         flash(f"Could not look up SKU {sku} - saved it anyway. Check the match later.", 'warning')
     else:
@@ -957,13 +1141,17 @@ def tesco_match_persistent(ingredient_id):
         db.close()
         return 'Ingredient not found', 404
     product, _results = match_ingredient_tesco(ing['name'])
+    conflict = None
     if product:
         db.execute('UPDATE persistent_ingredients SET tesco_sku=? WHERE id=?', (product['sku'], ingredient_id))
         db.commit()
+        conflict = _sku_conflict(db, product['sku'], ingredient_id, 'persistent_ingredients')
         flash(f"Matched \"{product['title']}\"", 'success')
     else:
         flash(f"No Tesco product found for \"{ing['name']}\". Try again later.", 'warning')
     db.close()
+    if conflict:
+        return redirect(url_for('merge_confirm', keep_id=ingredient_id, drop_id=conflict['id']))
     return redirect(url_for('persistent_ingredients'))
 
 
@@ -1003,8 +1191,40 @@ if __name__ == "__main__":
     # FLASK_DEBUG=0 turns the debug reloader off (used by the self-updater's
     # re-exec so the old process doesn't come back on top of the new one).
     if getattr(sys, 'frozen', False):
+        # Frozen installs serve the whole LAN (family members open vote
+        # links via the machine's network name, e.g. shoppingapp.local).
+        import socket
+        import threading
+        import time
+        import webbrowser
+
+        def _open_browser(delay):
+            time.sleep(delay)
+            try:
+                webbrowser.open('http://localhost:%d' % port)
+            except Exception:
+                pass
+
+        def _port_in_use():
+            s = socket.socket()
+            s.settimeout(0.25)
+            try:
+                s.connect(('127.0.0.1', port))
+                return True
+            except OSError:
+                return False
+            finally:
+                s.close()
+
+        if os.environ.get('SHOPPING_APP_NO_BROWSER') != '1' and _port_in_use():
+            # An instance is already running — the shortcut is just a
+            # launcher, so hand the user to the existing app.
+            _open_browser(0.5)
+            sys.exit(0)
+        if os.environ.get('SHOPPING_APP_NO_BROWSER') != '1':
+            threading.Thread(target=_open_browser, args=(1.0,), daemon=True).start()
         from waitress import serve
-        serve(app, host='127.0.0.1', port=port)
+        serve(app, host='0.0.0.0', port=port)
     else:
         debug = os.environ.get('FLASK_DEBUG', '1') != '0'
         app.run(debug=debug, use_reloader=debug, host='127.0.0.1', port=port)

@@ -16,6 +16,11 @@
                 <label class="form-label" style="font-weight:500; font-size:13px;">Description</label>
                 <textarea name="description" class="form-control" rows="3">{{ meal['description'] or '' }}</textarea>
             </div>
+            <div class="mb-3">
+                <label class="form-label" style="font-weight:500; font-size:13px;">Categories</label>
+                <input type="text" name="categories" class="form-control" value="{{ categories }}" placeholder="e.g. Chicken, 30 min">
+                <div class="form-text" style="font-size:12px;">Separate several with commas.</div>
+            </div>
             <button type="submit" class="btn btn-primary">Save Changes</button>
             <a href="/meal_tracker" class="btn btn-outline-secondary btn-sm">Cancel</a>
         </form>

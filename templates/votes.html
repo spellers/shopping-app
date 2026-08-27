@@ -37,6 +37,11 @@
                     {{ vote.created_at }}
                 </div>
                 <a href="/vote/{{ vote.id }}/results" class="btn btn-sm btn-success">View Results</a>
+                <button type="button" class="btn btn-sm btn-outline-secondary copy-vote-link" data-link="/vote/{{ vote.id }}">Get Link</button>
+                <form method="POST" action="/vote/{{ vote.id }}/delete" class="d-inline"
+                      onsubmit="return confirm('Delete this vote and all of its results?');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                </form>
             </div>
         </div>
     </div>
@@ -45,4 +50,25 @@
 {% else %}
 <p class="text-muted">No votes yet.</p>
 {% endif %}
+<script>
+function copyVoteLink(link, btn) {
+    const full = new URL(link, window.location.origin).href;
+    navigator.clipboard.writeText(full).then(() => {
+        if (btn) {
+            const old = btn.textContent;
+            btn.textContent = 'Copied!';
+            setTimeout(() => btn.textContent = old, 1500);
+        }
+    }).catch(() => {
+        // Clipboard blocked (e.g. non-HTTPS context) — fall back to a prompt
+        window.prompt('Copy this vote link:', full);
+    });
+}
+document.querySelectorAll('.copy-vote-link').forEach(btn => {
+    btn.addEventListener('click', () => copyVoteLink(btn.dataset.link, btn));
+});
+{% if created_id %}
+copyVoteLink('/vote/{{ created_id }}', null);
+{% endif %}
+</script>
 {% endblock %}

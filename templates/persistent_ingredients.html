@@ -29,6 +29,16 @@
         </form>
     </div>
 </div>
+{% if categories %}
+<div class="mb-3" style="font-size:13px;">
+    <a href="{{ url_for('persistent_ingredients') }}"
+       class="btn btn-sm {% if not active_category %}btn-primary{% else %}btn-outline-primary{% endif %}">All</a>
+    {% for cat in categories %}
+    <a href="{{ url_for('persistent_ingredients', category=cat) }}"
+       class="btn btn-sm {% if active_category == cat %}btn-primary{% else %}btn-outline-primary{% endif %}">{{ cat }}</a>
+    {% endfor %}
+</div>
+{% endif %}
 {% if ingredients %}
 <div class="card">
     <div class="card-body">
@@ -39,7 +49,18 @@
             <tbody>
             {% for ing in ingredients %}
             <tr>
-                <td>{{ ing['name'] }}</td>
+                <td>
+                    <span class="name-display">{{ ing['name'] }}</span>
+                    <form method="POST" action="/rename_persistent_ingredient/{{ ing['id'] }}" class="rename-form d-inline d-none" style="display:inline;">
+                        <input type="text" name="name" class="form-control form-control-sm d-inline-block" style="width:180px; display:inline-block;"
+                               value="{{ ing['name'] }}" required>
+                        <button type="submit" class="btn btn-sm btn-success" style="padding:1px 8px;">Save</button>
+                    </form>
+                    <button class="btn btn-link btn-sm text-decoration-none p-0 rename-toggle" style="font-size:12px; padding-left:4px;"
+                            onclick="var f=this.closest('td');f.querySelector('.name-display').classList.add('d-none');f.querySelector('.rename-form').classList.remove('d-none');f.querySelector('input[name=name]').focus();">
+                        &#9998;
+                    </button>
+                </td>
                 <td><span class="badge bg-secondary">{{ ing['category'] or '-' }}</span></td>
                 <td>
                     <form method="POST" action="/toggle_shareable/{{ ing['id'] }}/persist" style="display:inline;">
@@ -71,6 +92,12 @@
     </div>
 </div>
 {% else %}
-<p class="text-muted">No persistent ingredients saved yet. Add some here, then link them to meals from the meal detail page.</p>
+<p class="text-muted">
+    {% if active_category %}
+        No ingredients in "{{ active_category }}".
+    {% else %}
+        No persistent ingredients saved yet. Add some here, then link them to meals from the meal detail page.
+    {% endif %}
+</p>
 {% endif %}
 {% endblock %}

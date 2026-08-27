@@ -16,8 +16,8 @@
                 <span class="text-muted">{{ opt.vote_count }} vote{{ 's' if opt.vote_count != 1 else '' }}</span>
             </div>
             {% if total_votes > 0 %}
-            <div style="background:#e5e7eb; border-radius:4px; overflow:hidden;">
-                <div style="background:#3b82f6; height:22px; width:{{ (opt.vote_count / total_votes * 100) | round(1) }}%;"></div>
+            <div style="background:var(--border); border-radius:4px; overflow:hidden;">
+                <div style="background:var(--primary); height:22px; width:{{ (opt.vote_count / total_votes * 100) | round(1) }}%;"></div>
             </div>
             {% endif %}
         </div>

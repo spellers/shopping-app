@@ -1,13 +1,37 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Meal Planner{% endblock %}</title>
+    <script>
+        // Apply the saved theme before first paint to avoid a flash.
+        // Dark is the default; only switch if the user picked light.
+        try { if (localStorage.getItem('theme') === 'light') {
+            document.documentElement.setAttribute('data-bs-theme', 'light');
+        } } catch (e) {}
+    </script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        /* Dark theme (default) */
         :root {
+            --primary: #4361ee;
+            --primary-hover: #5a76ff;
+            --bg: #12141a;
+            --card-bg: #1c1f27;
+            --text: #e6e8ee;
+            --text-muted: #9aa1ad;
+            --border: #2a2e39;
+            --nav-bg: #16181f;
+            --nav-border: #262a35;
+            --nav-hover: #232735;
+            --success: #2ec4b6;
+            --danger: #e63946;
+            --warning: #fca311;
+        }
+        /* Light theme (opt-in) */
+        [data-bs-theme="light"] {
             --primary: #4361ee;
             --primary-hover: #3a56d4;
             --bg: #f8f9fa;
@@ -17,9 +41,7 @@
             --border: #e9ecef;
             --nav-bg: #ffffff;
             --nav-border: #dee2e6;
-            --success: #2ec4b6;
-            --danger: #e63946;
-            --warning: #fca311;
+            --nav-hover: #eef0ff;
         }
         * { box-sizing: border-box; }
         body {
@@ -59,7 +81,7 @@
             white-space: nowrap;
         }
         .top-nav a:hover {
-            background: #eef0ff;
+            background: var(--nav-hover);
             color: var(--primary);
         }
         .top-nav a.active {
@@ -101,7 +123,24 @@
             transform: translateY(0);
         }
         .card:hover {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        [data-bs-theme="light"] .card:hover {
             box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        .theme-toggle {
+            margin-left: auto;
+            background: none;
+            border: 1px solid var(--nav-border);
+            border-radius: 8px;
+            padding: 5px 10px;
+            font-size: 14px;
+            line-height: 1;
+            cursor: pointer;
+            color: var(--text-muted);
+        }
+        .theme-toggle:hover {
+            background: var(--nav-hover);
         }
         .card-body { padding: 12px 14px; }
         .btn {
@@ -160,17 +199,18 @@
 <body>
     <div class="top-nav">
         <a href="/meal_tracker" class="brand">Meal Planner</a>
-        <a href="/meal_tracker">Meal Tracker</a>
+        <a href="/meal_tracker">Meals</a>
         <a href="/shopping_list">Shopping List</a>
         <a href="/votes">Voting</a>
         <a href="/persistent_ingredients">Ingredients</a>
         <a href="/tesco">Tesco</a>
         <a href="/help">Help</a>
+        <button type="button" class="theme-toggle" id="themeToggle" title="Toggle light/dark mode">☀️</button>
     </div>
 
     <div class="main-content">
         {% if update and update.update_available and not update.dismissed %}
-        <div class="alert alert-primary alert-dismissible fade show" role="alert" style="background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;">
+        <div class="alert alert-primary alert-dismissible fade show" role="alert" style="background:rgba(67,97,238,0.15);border:1px solid rgba(67,97,238,0.4);color:var(--text);">
             <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;">
                 <div>
                     <strong>A new version is available: {{ update.latest_version }}</strong>
@@ -205,6 +245,19 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        (function () {
+            var root = document.documentElement;
+            var btn = document.getElementById('themeToggle');
+            function isLight() { return root.getAttribute('data-bs-theme') === 'light'; }
+            function paint() { btn.textContent = isLight() ? '🌙' : '☀️'; }
+            paint();
+            btn.addEventListener('click', function () {
+                var next = isLight() ? 'dark' : 'light';
+                root.setAttribute('data-bs-theme', next);
+                try { localStorage.setItem('theme', next); } catch (e) {}
+                paint();
+            });
+        })();
         async function tescoSuggest(url, btn) {
             try {
                 const resp = await fetch(url);

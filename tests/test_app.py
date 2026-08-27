@@ -115,6 +115,119 @@ def test_add_persistent_ingredient(client):
     assert row is not None
 
 
+def test_rename_persistent_ingredient(client):
+    client.post('/persistent_ingredients', data={'name': 'cooked rice see tip, below', 'category': 'Imported'})
+    db = app_module.get_db()
+    pid = db.execute("SELECT id FROM persistent_ingredients WHERE name='cooked rice see tip, below'").fetchone()['id']
+    db.close()
+    response = client.post(f'/rename_persistent_ingredient/{pid}', data={'name': 'cooked rice'}, follow_redirects=True)
+    assert response.status_code == 200
+    db = app_module.get_db()
+    row = db.execute('SELECT * FROM persistent_ingredients WHERE id=?', (pid,)).fetchone()
+    db.close()
+    assert row['name'] == 'cooked rice'
+
+
+def test_rename_persistent_ingredient_rejects_empty(client):
+    db = app_module.get_db()
+    db.execute("INSERT INTO persistent_ingredients (name, category) VALUES (?, ?)", ('Rice', 'Imported'))
+    db.commit()
+    pid = db.execute("SELECT id FROM persistent_ingredients WHERE name='Rice'").fetchone()['id']
+    db.close()
+    response = client.post(f'/rename_persistent_ingredient/{pid}', data={'name': '   '}, follow_redirects=True)
+    assert response.status_code == 200
+    db = app_module.get_db()
+    row = db.execute('SELECT name FROM persistent_ingredients WHERE id=?', (pid,)).fetchone()
+    db.close()
+    assert row['name'] == 'Rice'
+
+
+def test_persistent_ingredient_category_filter(client):
+    client.post('/persistent_ingredients', data={'name': 'Salt', 'category': 'pantry'})
+    client.post('/persistent_ingredients', data={'name': 'Flour', 'category': 'pantry'})
+    client.post('/persistent_ingredients', data={'name': 'Milk', 'category': 'dairy'})
+    response = client.get('/persistent_ingredients?category=pantry')
+    assert response.status_code == 200
+    assert b'Salt' in response.data and b'Flour' in response.data
+    assert b'Milk' not in response.data
+    response = client.get('/persistent_ingredients')
+    assert b'Salt' in response.data and b'Milk' in response.data
+
+
+def test_merge_persistent_ingredient_moves_meal_links(client, sample_meal):
+    db = app_module.get_db()
+    db.execute("INSERT INTO persistent_ingredients (name, category) VALUES (?, ?)", ('Rice (imported)', 'Imported'))
+    db.execute("INSERT INTO persistent_ingredients (name, category) VALUES (?, ?)", ('Rice', 'pantry'))
+    db.commit()
+    keep_id = db.execute("SELECT id FROM persistent_ingredients WHERE name='Rice'").fetchone()['id']
+    drop_id = db.execute("SELECT id FROM persistent_ingredients WHERE name='Rice (imported)'").fetchone()['id']
+    db.execute('INSERT INTO persistent_ingredient_meals (meal_id, persistent_ingredient_id, quantity) VALUES (?, ?, ?)',
+               (sample_meal, drop_id, '600 g'))
+    db.commit()
+    db.close()
+    response = client.post(f'/merge_persistent_ingredient/{keep_id}/{drop_id}', follow_redirects=True)
+    assert response.status_code == 200
+    db = app_module.get_db()
+    assert db.execute('SELECT id FROM persistent_ingredients WHERE id=?', (drop_id,)).fetchone() is None
+    link = db.execute('SELECT * FROM persistent_ingredient_meals WHERE meal_id=? AND persistent_ingredient_id=?',
+                      (sample_meal, keep_id)).fetchone()
+    db.close()
+    assert link is not None and link['quantity'] == '600 g'
+
+
+def test_merge_persistent_ingredient_takes_sku_when_keep_has_none(client, sample_meal):
+    db = app_module.get_db()
+    db.execute("INSERT INTO persistent_ingredients (name) VALUES (?)", ('Rice (imported)',))
+    db.execute("INSERT INTO persistent_ingredients (name) VALUES (?)", ('Rice',))
+    db.commit()
+    keep_id = db.execute("SELECT id FROM persistent_ingredients WHERE name='Rice'").fetchone()['id']
+    drop_id = db.execute("SELECT id FROM persistent_ingredients WHERE name='Rice (imported)'").fetchone()['id']
+    db.execute('UPDATE persistent_ingredients SET tesco_sku=? WHERE id=?', ('123456789', drop_id))
+    db.commit()
+    db.close()
+    client.post(f'/merge_persistent_ingredient/{keep_id}/{drop_id}')
+    db = app_module.get_db()
+    row = db.execute('SELECT tesco_sku FROM persistent_ingredients WHERE id=?', (keep_id,)).fetchone()
+    db.close()
+    assert row['tesco_sku'] == '123456789'
+
+
+def test_tesco_select_persistent_sku_conflict_offers_merge(client, monkeypatch):
+    db = app_module.get_db()
+    db.execute("INSERT INTO persistent_ingredients (name, tesco_sku) VALUES (?, ?)", ('Rice', '111222333'))
+    db.execute("INSERT INTO persistent_ingredients (name) VALUES (?)", ('Rice (imported)',))
+    db.commit()
+    existing_id = db.execute("SELECT id FROM persistent_ingredients WHERE name='Rice'").fetchone()['id']
+    new_id = db.execute("SELECT id FROM persistent_ingredients WHERE name='Rice (imported)'").fetchone()['id']
+    db.close()
+    response = client.post(f'/tesco/select/{new_id}/persist', data={
+        'sku': '111222333', 'title': 'Tesco Rice 600g',
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    assert b'Merge ingredients' in response.data
+    db = app_module.get_db()
+    row = db.execute('SELECT tesco_sku FROM persistent_ingredients WHERE id=?', (new_id,)).fetchone()
+    db.close()
+    assert row['tesco_sku'] == '111222333'
+
+
+def test_tesco_select_persistent_no_conflict(client):
+    db = app_module.get_db()
+    db.execute("INSERT INTO persistent_ingredients (name) VALUES (?)", ('Oat Flakes',))
+    db.commit()
+    pid = db.execute("SELECT id FROM persistent_ingredients WHERE name='Oat Flakes'").fetchone()['id']
+    db.close()
+    response = client.post(f'/tesco/select/{pid}/persist', data={
+        'sku': '999888777', 'title': 'Tesco Oat Flakes 1kg',
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    assert b'Merge ingredients' not in response.data
+    db = app_module.get_db()
+    row = db.execute('SELECT tesco_sku FROM persistent_ingredients WHERE id=?', (pid,)).fetchone()
+    db.close()
+    assert row['tesco_sku'] == '999888777'
+
+
 def test_add_persistent_to_meal(client, sample_meal):
     db = app_module.get_db()
     db.execute("INSERT INTO persistent_ingredients (name, category) VALUES (?, ?)", ('Oil', 'pantry'))

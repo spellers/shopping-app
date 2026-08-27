@@ -414,7 +414,8 @@ def _update_dev_checkout(tag):
         "    if running_version() == want:\n"
         "        sys.exit(0)\n"
         "    time.sleep(1)\n"
-        "env = dict(os.environ, FLASK_DEBUG='0')\n"
+        "env = dict(os.environ, FLASK_DEBUG='0',\n"
+        "           SHOPPING_APP_NO_BROWSER='1')\n"
         "subprocess.Popen([sys.executable, target], env=env,\n"
         "                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,\n"
         "                 stdin=subprocess.DEVNULL, start_new_session=True)\n")
@@ -483,10 +484,13 @@ def _spawn_watchdog(script, *args):
                    else [sys.executable])
     with open(script_path, 'w') as fh:
         fh.write(script)
+    # SHOPPING_APP_NO_BROWSER rides through process.env into whatever the
+    # watchdog launches, so self-update restarts don't pop up a browser.
     subprocess.Popen(
         interpreter + [script_path] + [str(a) for a in args],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        stdin=subprocess.DEVNULL, start_new_session=True)
+        stdin=subprocess.DEVNULL, start_new_session=True,
+        env=dict(os.environ, SHOPPING_APP_NO_BROWSER='1'))
 
 
 def _install_frozen(dest, st):
