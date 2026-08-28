@@ -1,7 +1,6 @@
 # Shopping App
 
-A local web app for household meal planning: shared meal lists, ingredient
-voting, a shopping list, and a Tesco grocery-basket integration (via the
+A local web app for household meal planning: meal voting, ingredient lists that can be used to generate a shopping list, and a Tesco grocery-basket integration (via the
 [basketeer](https://www.npmjs.com/package/basketeer) CLI, which drives a real
 Chrome session through Playwright).
 
