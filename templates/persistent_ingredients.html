@@ -72,12 +72,12 @@
                     </form>
                 </td>
                 <td style="font-size:12px;">
-                    {% if ing['tesco_sku'] %}
-                    <span class="badge bg-success-subtle text-success">{{ ing['tesco_sku'] }}</span>
+                    {% if ing['sku'] %}
+                    <span class="badge bg-success-subtle text-success">{{ ing['sku'] }}</span>
                     {% endif %}
                     <button class="btn btn-outline-primary btn-sm" style="padding:2px 8px; font-size:11px;"
                             onclick="this.disabled=true;this.textContent='Searching...';tescoSuggest('/tesco/suggest/{{ ing['id'] }}/persist', this)">
-                        {% if ing['tesco_sku'] %}Re-match{% else %}Find in Tesco{% endif %}
+                        {% if ing['sku'] %}Re-match{% else %}Find in Tesco{% endif %}
                     </button>
                 </td>
                 <td>

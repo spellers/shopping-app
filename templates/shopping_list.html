@@ -33,11 +33,11 @@
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div>
                     <h6 style="font-weight:600; margin:0;">{{ item.name }}</h6>
-                    {% if item.tesco %}
+                    {% if item.grocer %}
                     <small class="text-muted d-block" style="font-size:12px;">
-                        {{ item.tesco.title }}
-                        {% if item.tesco.price is not none %}
-                        &middot; &pound;{{ '%.2f' % item.tesco.price }}{% if item.tesco.unit_of_measure %}/{{ item.tesco.unit_of_measure }}{% endif %}
+                        {{ item.grocer.title }}
+                        {% if item.grocer.price is not none %}
+                        &middot; &pound;{{ '%.2f' % item.grocer.price }}{% if item.grocer.unit_of_measure %}/{{ item.grocer.unit_of_measure }}{% endif %}
                         {% endif %}
                     </small>
                     {% endif %}
@@ -46,8 +46,8 @@
                     {% if item.quantity %}
                     <span class="badge bg-secondary">{{ item.quantity }}</span>
                     {% endif %}
-                    {% if item.tesco %}
-                    <span class="badge bg-success-subtle text-success">Tesco &pound;{{ '%.2f' % (item.tesco.price or 0) }}</span>
+                    {% if item.grocer %}
+                    <span class="badge bg-success-subtle text-success">Tesco &pound;{{ '%.2f' % (item.grocer.price or 0) }}</span>
                     {% else %}
                     <span class="badge text-muted border">unmatched</span>
                     {% endif %}
@@ -56,7 +56,7 @@
         </div>
         {% endfor %}
 
-        {% set matched = items | selectattr('tesco_sku', 'ne', '') | list %}
+        {% set matched = items | selectattr('sku', 'ne', '') | list %}
         {% if matched and signed_in %}
         <hr style="margin:16px 0;">
         <form method="POST" action="/tesco/add_to_basket" onsubmit="return confirm('Add {{ matched | length }} matched item(s) to your Tesco basket?')">

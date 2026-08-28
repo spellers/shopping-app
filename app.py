@@ -2,9 +2,16 @@ from flask import session
 import os
 import sqlite3
 from datetime import datetime
+import providers
 import tesco
 import datadir
 import recipe_import
+
+# All retailer access goes through the provider registry (multi-grocer
+# plan step 2). These Tesco routes keep their URLs for backwards compatibility;
+# the routes themselves are now provider-driven and will generalise to more
+# retailers in plan step 7.
+_TESCO = providers.get_grocer('tesco')
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, g
 import socket
 import sys
@@ -135,12 +142,16 @@ def init_db():
             name TEXT NOT NULL,
             quantity TEXT,
             unit TEXT,
+            sku TEXT,
+            retailer TEXT NOT NULL DEFAULT 'tesco',
             FOREIGN KEY (meal_id) REFERENCES meals(id)
         );
         CREATE TABLE IF NOT EXISTS persistent_ingredients (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
-            category TEXT
+            category TEXT,
+            sku TEXT,
+            retailer TEXT NOT NULL DEFAULT 'tesco'
         );
         CREATE TABLE IF NOT EXISTS votes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -174,7 +185,9 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             quantity TEXT,
-            checked INTEGER DEFAULT 0
+            checked INTEGER DEFAULT 0,
+            sku TEXT,
+            retailer TEXT NOT NULL DEFAULT 'tesco'
         );
         CREATE TABLE IF NOT EXISTS shopping_list_meals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -188,8 +201,9 @@ def init_db():
             category TEXT NOT NULL,
             FOREIGN KEY (meal_id) REFERENCES meals(id)
         );
-        CREATE TABLE IF NOT EXISTS tesco_products (
-            sku TEXT PRIMARY KEY,
+        CREATE TABLE IF NOT EXISTS grocer_products (
+            retailer TEXT NOT NULL,
+            sku TEXT NOT NULL,
             title TEXT NOT NULL,
             brand TEXT,
             price REAL,
@@ -197,7 +211,8 @@ def init_db():
             unit_of_measure TEXT,
             image_url TEXT,
             matched_term TEXT,
-            created_at TEXT
+            created_at TEXT,
+            PRIMARY KEY (retailer, sku)
         );
     """)
         db.commit()
@@ -292,14 +307,41 @@ DEMO_MEAL_NAMES = (
 def _migrate(db):
     """Add columns created after older DB versions exist."""
     wanted_cols = [
-        ('ingredients', 'tesco_sku'),
-        ('persistent_ingredients', 'tesco_sku'),
-        ('shopping_list_items', 'tesco_sku'),
+        ('ingredients', 'sku'),
+        ('persistent_ingredients', 'sku'),
+        ('shopping_list_items', 'sku'),
     ]
     for table, col in wanted_cols:
         existing = {row[1] for row in db.execute('PRAGMA table_info(' + table + ')').fetchall()}
         if col not in existing:
-            db.execute('ALTER TABLE ' + table + ' ADD COLUMN ' + col + ' TEXT')
+            if 'tesco_sku' in existing:
+                # Old column name from the Tesco-only era; rename in place.
+                db.execute('ALTER TABLE ' + table + ' RENAME COLUMN tesco_sku TO sku')
+            else:
+                db.execute('ALTER TABLE ' + table + ' ADD COLUMN ' + col + ' TEXT')
+    # retailer: which grocer's product ID lives in sku. Defaults to 'tesco'
+    # so every pre-existing row keeps its current meaning.
+    for table, _col in wanted_cols:
+        existing = {row[1] for row in db.execute('PRAGMA table_info(' + table + ')').fetchall()}
+        if 'retailer' not in existing:
+            db.execute('ALTER TABLE ' + table + ' ADD COLUMN retailer TEXT NOT NULL DEFAULT \'tesco\'')
+    # The old single-grocer product cache becomes grocer_products
+    # (retailer, sku) so each grocer has its own catalogue.
+    old_cache = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tesco_products'").fetchone()
+    if old_cache:
+        db.commit()  # settle any open transaction so the DROP below can't roll back DDL
+        db.execute(
+            'CREATE TABLE IF NOT EXISTS grocer_products ('
+            'retailer TEXT NOT NULL, sku TEXT NOT NULL, title TEXT NOT NULL, brand TEXT, '
+            'price REAL, unit_price REAL, unit_of_measure TEXT, image_url TEXT, matched_term TEXT, '
+            'created_at TEXT, PRIMARY KEY (retailer, sku))')
+        db.commit()
+        db.execute(
+            'INSERT OR IGNORE INTO grocer_products '
+            '(retailer, sku, title, brand, price, unit_price, unit_of_measure, image_url, matched_term, created_at) '
+            'SELECT \'tesco\', sku, title, brand, price, unit_price, unit_of_measure, image_url, matched_term, created_at '
+            'FROM tesco_products WHERE sku != \'\'')
+        db.execute('DROP TABLE tesco_products')
     # shareable: 1 = one unit covers every meal that uses it (rice, pasta...);
     # 0 = one unit per meal (chicken, mince...).
     added_shareable = []
@@ -332,50 +374,58 @@ def _migrate(db):
     db.commit()
 
 
-def match_ingredient_tesco(name):
-    """Match an ingredient name to a Tesco product.
+def match_ingredient_tesco(name, retailer='tesco'):
+    """Match an ingredient name to a product at the given retailer.
 
-    Checks the local cache (tesco_products) first, then falls back to a live
-    catalogue search, keeping the top result. Returns (product_or_None,
-    results_list) so a UI layer can offer alternatives.
+    Checks the local cache (grocer_products) first, then falls back to a live
+    catalogue search via the provider, keeping the top result. Returns
+    (product_or_None, results_list) so a UI layer can offer alternatives.
     """
     db = get_db()
-    row = db.execute('SELECT * FROM tesco_products WHERE matched_term=?', (name,)).fetchone()
+    row = db.execute(
+        'SELECT * FROM grocer_products WHERE retailer=? AND matched_term=?',
+        (retailer, name)).fetchone()
     if row:
         db.close()
         return dict(row), [dict(row)]
+    grocer = providers.get_grocer(retailer)
+    if grocer is None or not grocer.supports_search:
+        db.close()
+        return None, []
     try:
-        results = tesco.search(name, limit=5)
-    except tesco.TescoError:
+        results = grocer.search(name, limit=5)
+    except providers.GrocerError:
         db.close()
         return None, []
     if not results:
         db.close()
         return None, []
     best = results[0]
-    _cache_product(db, best, matched_term=name)
+    _cache_product(db, retailer, best, matched_term=name)
     db.commit()
     db.close()
     return best, results
 
 
-def _cache_product(db, product, matched_term=None):
-    """Store a product in the local tesco_products cache (by SKU).
+def _cache_product(db, retailer, product, matched_term=None):
+    """Store a product in the local grocer_products cache (by retailer+SKU).
 
     The shopping list page resolves product titles/prices from this cache,
     so every matching path MUST write through here.
     """
     db.execute(
-        'INSERT OR REPLACE INTO tesco_products (sku, title, brand, price, unit_price, '
-        'unit_of_measure, image_url, matched_term, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        (str(product.get('sku') or '').strip(), product.get('title') or '',
+        'INSERT OR REPLACE INTO grocer_products '
+        '(retailer, sku, title, brand, price, unit_price, '
+        'unit_of_measure, image_url, matched_term, created_at) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        (retailer, str(product.get('sku') or '').strip(), product.get('title') or '',
          product.get('brand') or '', product.get('price'), product.get('unit_price'),
          product.get('unit_of_measure') or '', product.get('image_url') or '',
          matched_term, datetime.now().strftime('%Y-%m-%d %H:%M'))
     )
 
 
-def _refresh_product_cache(sku, name_hint=None):
+def _refresh_product_cache(sku, retailer='tesco', name_hint=None):
     """Fill a cache row for a known-but-uncached SKU via a live lookup.
 
     Returns True if a row was added, False if the lookup failed.
@@ -383,16 +433,22 @@ def _refresh_product_cache(sku, name_hint=None):
     if not sku:
         return False
     db = get_db()
-    existing = db.execute('SELECT sku FROM tesco_products WHERE sku=?', (sku,)).fetchone()
+    existing = db.execute(
+        'SELECT sku FROM grocer_products WHERE retailer=? AND sku=?',
+        (retailer, sku)).fetchone()
     if existing:
         db.close()
         return False
-    try:
-        product = tesco.get_product(sku)
-    except tesco.TescoError:
+    grocer = providers.get_grocer(retailer)
+    if grocer is None or not grocer.supports_search:
         db.close()
         return False
-    _cache_product(db, product, matched_term=name_hint or product.get('title'))
+    try:
+        product = grocer.get_product(sku)
+    except providers.GrocerError:
+        db.close()
+        return False
+    _cache_product(db, retailer, product, matched_term=name_hint or product.get('title'))
     db.commit()
     db.close()
     return True
@@ -465,7 +521,7 @@ def meal_detail(meal_id):
     # Fetch persistent ingredients linked to this meal
     persistent_links = db.execute('''
         SELECT pim.id, pim.meal_id, pim.persistent_ingredient_id, pim.quantity,
-               pi.name as ingredient_name, pi.category, pi.tesco_sku, pi.shareable
+               pi.name as ingredient_name, pi.category, pi.sku, pi.shareable
         FROM persistent_ingredient_meals pim
         JOIN persistent_ingredients pi ON pim.persistent_ingredient_id = pi.id
         WHERE pim.meal_id = ?
@@ -686,7 +742,7 @@ def persistent_ingredients():
 def _sku_conflict(db, sku, ingredient_id, table):
     """Return the row of a *different* ingredient in `table` that already uses `sku`."""
     return db.execute(
-        'SELECT * FROM ' + table + ' WHERE tesco_sku=? AND id != ? LIMIT 1',
+        'SELECT * FROM ' + table + ' WHERE sku=? AND id != ? LIMIT 1',
         (sku, ingredient_id)).fetchone()
 
 
@@ -721,8 +777,9 @@ def merge_persistent_ingredient(keep_id, drop_id):
         db.close()
         flash('Ingredient not found.', 'warning')
         return redirect('/persistent_ingredients')
-    if not keep['tesco_sku'] and drop['tesco_sku']:
-        db.execute('UPDATE persistent_ingredients SET tesco_sku=? WHERE id=?', (drop['tesco_sku'], keep_id))
+    if not keep['sku'] and drop['sku']:
+        db.execute('UPDATE persistent_ingredients SET sku=?, retailer=? WHERE id=?',
+                   (drop['sku'], drop['retailer'], keep_id))
     # Move each meal link of the dropped ingredient to the kept one (no duplicates).
     for link in db.execute('SELECT * FROM persistent_ingredient_meals WHERE persistent_ingredient_id=?', (drop_id,)).fetchall():
         existing = db.execute('SELECT id FROM persistent_ingredient_meals WHERE meal_id=? AND persistent_ingredient_id=?',
@@ -876,12 +933,13 @@ def create_shopping_list():
         return redirect(url_for('vote_results', vote_id=int(vote_id)) if vote_id else url_for('votes'))
     
     # Aggregate ingredients from selected meals
-    agg = {}  # {name: {'quantity': '', 'unit': '', 'meals': set, 'shareable': bool, 'sku': ''}}
+    agg = {}  # {name: {'quantity': '', 'unit': '', 'meals': set, 'shareable': bool, 'sku': '', 'retailer': 'tesco'}}
 
-    def _add_agg(name, quantity, unit, sku, shareable, meal_id, meal_name):
+    def _add_agg(name, quantity, unit, sku, retailer, shareable, meal_id, meal_name):
         if name in agg:
             if sku and not agg[name]['sku']:
                 agg[name]['sku'] = sku
+                agg[name]['retailer'] = retailer or 'tesco'
             agg[name]['meals'].add(meal_id)
         else:
             agg[name] = {
@@ -890,6 +948,7 @@ def create_shopping_list():
                 'meals': {meal_id},
                 'shareable': bool(shareable),
                 'sku': sku or '',
+                'retailer': retailer or 'tesco',
                 'meal_name': meal_name
             }
 
@@ -899,18 +958,18 @@ def create_shopping_list():
         ).fetchone()['name']
         # Get regular ingredients
         rows = db.execute(
-            'SELECT name, quantity, tesco_sku, shareable FROM ingredients WHERE meal_id=?',
+            'SELECT name, quantity, sku, retailer, shareable FROM ingredients WHERE meal_id=?',
             (meal_id,)
         ).fetchall()
         for row in rows:
             _add_agg(
                 row['name'].strip().lower(), row['quantity'], '',
-                row['tesco_sku'], row['shareable'], meal_id, meal_name
+                row['sku'], row['retailer'], row['shareable'], meal_id, meal_name
             )
         
         # Get persistent ingredient meals
         pim_rows = db.execute(
-            '''SELECT pi.name, pi.category, pim.quantity, pi.tesco_sku, pi.shareable
+            '''SELECT pi.name, pi.category, pim.quantity, pi.sku, pi.retailer, pi.shareable
                FROM persistent_ingredient_meals pim
                JOIN persistent_ingredients pi ON pim.persistent_ingredient_id = pi.id
                WHERE pim.meal_id=?''',
@@ -919,7 +978,7 @@ def create_shopping_list():
         for row in pim_rows:
             _add_agg(
                 row['name'].strip().lower(), row['quantity'], row['category'],
-                row['tesco_sku'], row['shareable'], meal_id, meal_name
+                row['sku'], row['retailer'], row['shareable'], meal_id, meal_name
             )
     
     # Clear existing shopping list and insert aggregated items
@@ -932,13 +991,14 @@ def create_shopping_list():
     for name, data in agg.items():
         if not data['sku']:
             row = db.execute(
-                'SELECT tesco_sku FROM persistent_ingredients '
-                'WHERE lower(name)=? AND tesco_sku IS NOT NULL AND tesco_sku != "" '
+                'SELECT sku, retailer FROM persistent_ingredients '
+                'WHERE lower(name)=? AND sku IS NOT NULL AND sku != "" '
                 'ORDER BY id LIMIT 1',
                 (name,)
             ).fetchone()
-            if row and row['tesco_sku']:
-                data['sku'] = row['tesco_sku']
+            if row and row['sku']:
+                data['sku'] = row['sku']
+                data['retailer'] = row['retailer'] or 'tesco'
 
     for name, data in agg.items():
         n_meals = len(data['meals'])
@@ -951,8 +1011,10 @@ def create_shopping_list():
         else:
             quantity = data['quantity']
         db.execute(
-            'INSERT INTO shopping_list_items (name, quantity, checked, tesco_sku) VALUES (?, ?, 0, ?)',
-            (name.title() if name else '', quantity, data.get('sku') or '')
+            'INSERT INTO shopping_list_items (name, quantity, checked, sku, retailer) '
+            'VALUES (?, ?, 0, ?, ?)',
+            (name.title() if name else '', quantity, data.get('sku') or '',
+             data.get('retailer') or 'tesco')
         )
     
     db.commit()
@@ -978,32 +1040,32 @@ def shopping_list_get():
         'SELECT m.* FROM meals m JOIN shopping_list_meals s ON s.meal_id = m.id ORDER BY m.id'
     ).fetchall()
     products = {
-        r['sku']: dict(r) for r in db.execute('SELECT * FROM tesco_products WHERE sku != ""').fetchall()
+        (r['retailer'], r['sku']): dict(r)
+        for r in db.execute('SELECT * FROM grocer_products WHERE sku != ""').fetchall()
     }
-    db.close()
     for item in items:
-        item['tesco'] = products.get(item['tesco_sku'])
-        if item['tesco'] is None and item['tesco_sku']:
+        item['grocer'] = products.get((item.get('retailer') or 'tesco', item['sku']))
+        if item['grocer'] is None and item['sku']:
             # Has a SKU but no cache row (matched before cache writes existed) -
             # fill it with a live lookup so the list stops showing "Not connected".
-            if _refresh_product_cache(item['tesco_sku'], name_hint=item['name']):
-                db = get_db()
+            if _refresh_product_cache(item['sku'], retailer=item.get('retailer') or 'tesco',
+                                      name_hint=item['name']):
                 row = db.execute(
-                    'SELECT * FROM tesco_products WHERE sku=?', (item['tesco_sku'],)
-                ).fetchone()
-                db.close()
+                    'SELECT * FROM grocer_products WHERE retailer=? AND sku=?',
+                    (item.get('retailer') or 'tesco', item['sku'])).fetchone()
                 if row:
-                    item['tesco'] = dict(row)
-    signed_in = tesco.auth_status()['signed_in']
+                    item['grocer'] = dict(row)
+    signed_in = _TESCO.auth_status()['signed_in']
     vote_id = request.args.get('vote_id', '')
     return render_template('shopping_list.html', items=items, meals=meals, vote_id=vote_id, signed_in=signed_in)
 
 @app.route('/tesco')
 def tesco_status_page():
-    status = tesco.auth_status()
-    login = tesco.login_status()
+    status = _TESCO.auth_status()
+    login = _TESCO.login_status()
     db = get_db()
-    cached = db.execute('SELECT COUNT(*) AS n FROM tesco_products').fetchone()['n']
+    cached = db.execute(
+        "SELECT COUNT(*) AS n FROM grocer_products WHERE retailer='tesco'").fetchone()['n']
     db.close()
     return render_template('tesco_status.html', signed_in=status['signed_in'],
                            login=login, cached=cached,
@@ -1012,7 +1074,7 @@ def tesco_status_page():
 
 @app.route('/tesco/login', methods=['POST'])
 def tesco_login():
-    if tesco.login():
+    if _TESCO.login():
         flash('Sign-in started - complete the Tesco login in the Chrome window that opened.', 'success')
     else:
         flash('Sign-in is already in progress - check its status below.', 'warning')
@@ -1021,7 +1083,7 @@ def tesco_login():
 
 @app.route('/tesco/login_status')
 def tesco_login_status():
-    return (tesco.login_status(), tesco.auth_status())
+    return (_TESCO.login_status(), _TESCO.auth_status())
 
 
 @app.route('/tesco/suggest/<int:ingredient_id>/<kind>')
@@ -1040,8 +1102,8 @@ def tesco_suggest(ingredient_id, kind):
         return 'Ingredient not found', 404
     error = None
     try:
-        results = tesco.search(ing['name'], limit=5)
-    except tesco.TescoError as exc:
+        results = _TESCO.search(ing['name'], limit=5)
+    except providers.GrocerError as exc:
         results, error = [], str(exc)
     return render_template(
         'tesco_match_modal.html', name=ing['name'], results=results,
@@ -1058,7 +1120,7 @@ def tesco_select_product(ingredient_id, kind):
         return 'No product selected', 400
     db = get_db()
     # Cache the picked product so the shopping list can show title/price.
-    _cache_product(db, {
+    _cache_product(db, 'tesco', {
         'sku': sku, 'title': title,
         'brand': (request.form.get('brand') or '').strip(),
         'price': _form_float('price'), 'unit_price': _form_float('unit_price'),
@@ -1070,7 +1132,8 @@ def tesco_select_product(ingredient_id, kind):
         if not row:
             db.close()
             return 'Ingredient not found', 404
-        db.execute('UPDATE ingredients SET tesco_sku=? WHERE id=?', (sku, ingredient_id))
+        db.execute('UPDATE ingredients SET sku=?, retailer=? WHERE id=?',
+                   (sku, 'tesco', ingredient_id))
         db.commit()
         db.close()
         flash(f"Matched \"{title or sku}\"", 'success')
@@ -1080,7 +1143,8 @@ def tesco_select_product(ingredient_id, kind):
         db.close()
         return 'Ingredient not found', 404
     conflict = _sku_conflict(db, sku, ingredient_id, 'persistent_ingredients')
-    db.execute('UPDATE persistent_ingredients SET tesco_sku=? WHERE id=?', (sku, ingredient_id))
+    db.execute('UPDATE persistent_ingredients SET sku=?, retailer=? WHERE id=?',
+               (sku, 'tesco', ingredient_id))
     db.commit()
     db.close()
     if conflict:
@@ -1124,12 +1188,13 @@ def tesco_select_sku(ingredient_id, kind):
                 else url_for('persistent_ingredients'))
     lookup_failed = False
     try:
-        product = tesco.get_product(sku)
+        product = _TESCO.get_product(sku)
         title = product['title'] or sku
-        _cache_product(db, product, matched_term=row['name'])
-    except tesco.TescoError:
+        _cache_product(db, 'tesco', product, matched_term=row['name'])
+    except providers.GrocerError:
         title, lookup_failed = sku, True
-    db.execute(f'UPDATE {table} SET tesco_sku=? WHERE id=?', (sku, ingredient_id))
+    db.execute(f'UPDATE {table} SET sku=?, retailer=? WHERE id=?',
+               (sku, 'tesco', ingredient_id))
     db.commit()
     conflict = None
     if table == 'persistent_ingredients':
@@ -1152,9 +1217,10 @@ def tesco_match_ingredient(ingredient_id):
     if not ing:
         db.close()
         return 'Ingredient not found', 404
-    product, _results = match_ingredient_tesco(ing['name'])
+    product, _results = match_ingredient_tesco(ing['name'], retailer='tesco')
     if product:
-        db.execute('UPDATE ingredients SET tesco_sku=? WHERE id=?', (product['sku'], ingredient_id))
+        db.execute('UPDATE ingredients SET sku=?, retailer=? WHERE id=?',
+                   (product['sku'], 'tesco', ingredient_id))
         db.commit()
         flash(f"Matched \"{product['title']}\"", 'success')
     else:
@@ -1171,10 +1237,11 @@ def tesco_match_persistent(ingredient_id):
     if not ing:
         db.close()
         return 'Ingredient not found', 404
-    product, _results = match_ingredient_tesco(ing['name'])
+    product, _results = match_ingredient_tesco(ing['name'], retailer='tesco')
     conflict = None
     if product:
-        db.execute('UPDATE persistent_ingredients SET tesco_sku=? WHERE id=?', (product['sku'], ingredient_id))
+        db.execute('UPDATE persistent_ingredients SET sku=?, retailer=? WHERE id=?',
+                   (product['sku'], 'tesco', ingredient_id))
         db.commit()
         conflict = _sku_conflict(db, product['sku'], ingredient_id, 'persistent_ingredients')
         flash(f"Matched \"{product['title']}\"", 'success')
@@ -1189,22 +1256,24 @@ def tesco_match_persistent(ingredient_id):
 @app.route('/tesco/add_to_basket', methods=['POST'])
 def tesco_add_to_basket():
     """Add every shopping-list item that has a Tesco SKU to the basket."""
-    if not tesco.auth_status()['signed_in']:
+    if not _TESCO.auth_status()['signed_in']:
         flash('Sign in to Tesco first.', 'warning')
         return redirect(url_for('tesco_status_page'))
     db = get_db()
-    items = db.execute('SELECT * FROM shopping_list_items WHERE tesco_sku IS NOT NULL AND tesco_sku != ""').fetchall()
+    items = db.execute(
+        'SELECT * FROM shopping_list_items WHERE retailer=? AND sku IS NOT NULL AND sku != ""',
+        ('tesco',)).fetchall()
     db.close()
     if not items:
         flash('No shopping list items have Tesco products matched yet.', 'warning')
         return redirect(url_for('shopping_list_get'))
     added, errors = 0, []
     for item in items:
-        qty = tesco.parse_qty(item['quantity'])
+        qty = _TESCO.parse_qty(item['quantity'])
         try:
-            tesco.basket_set(item['tesco_sku'], qty)
+            _TESCO.basket_set(item['sku'], qty)
             added += 1
-        except tesco.TescoError as exc:
+        except providers.GrocerError as exc:
             errors.append(f"{item['name']}: {str(exc)[:120]}")
     if errors:
         flash('Added %d item(s); %d failed: %s' % (added, len(errors), '; '.join(errors[:3])), 'warning')
