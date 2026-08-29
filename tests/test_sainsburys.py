@@ -15,7 +15,7 @@ def test_registry_has_sainsburys():
     assert grocer is not None
     assert grocer.name == "Sainsbury's"
     keys = [g.key for g in app_module.providers.list_grocers()]
-    assert keys == ['asda', 'sainsburys', 'tesco']
+    assert keys == ['asda', 'morrisons', 'sainsburys', 'tesco']
 
 
 def test_product_mapping():

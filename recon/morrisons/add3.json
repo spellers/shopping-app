@@ -1,0 +1,1 @@
+{"args":{},"path":"/core-api/v1/carts/active/apply-quantity","code":"INTERNAL_SERVER_ERROR","httpStatus":500,"error":"Internal Server Error","message":"Request could not be processed successfully","moreInfo":"http://tools.ietf.org/html/rfc7231#section-6.6.1","timestamp":"2026-08-29T12:43:19.870Z","status":500}
