@@ -36,7 +36,7 @@ def test_product_mapping():
     assert p['price'] == 1.75
     assert p['unit_price'] == 0.77
     assert p['unit_of_measure'] == 'per lt'
-    assert p['image_url'] == 'https://ui.assets-asda.com/dm/abcd1234'
+    assert p['image_url'] == 'https://asdagroceries.scene7.com/is/image/asdagroceries/abcd1234'
     assert p['on_offer'] is False
 
 

@@ -85,7 +85,7 @@ def _algolia_search(query, page_size, facet_filters=None, label='search'):
 def _image_url(image_id):
     if not image_id:
         return ''
-    return f'https://ui.assets-asda.com/dm/{image_id}'
+    return f'https://asdagroceries.scene7.com/is/image/asdagroceries/{image_id}'
 
 
 def _product(hit):
