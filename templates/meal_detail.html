@@ -72,12 +72,12 @@
                     </form>
                 </td>
                 <td style="font-size:12px;">
-                    {% if link['sku'] %}
+                    {% if link['active_match'] %}
                     <span class="badge bg-success-subtle text-success">{{ link['sku'] }}</span>
                     {% endif %}
                     <button class="btn btn-outline-primary btn-sm" style="padding:2px 8px; font-size:11px;"
                             onclick="this.disabled=true;this.textContent='Searching...';grocerSuggest('/grocers/suggest/{{ link['persistent_ingredient_id'] }}/persist', this)">
-                        {% if link['sku'] %}Re-match{% else %}Find in {{ active_grocer.name }}{% endif %}
+                        {% if link['active_match'] %}Re-match{% else %}Find in {{ active_grocer.name }}{% endif %}
                     </button>
                 </td>
                 <td>
@@ -117,12 +117,12 @@
                     </form>
                 </td>
                 <td style="font-size:12px;">
-                    {% if ing['sku'] %}
+                    {% if ing['active_match'] %}
                     <span class="badge bg-success-subtle text-success">{{ ing['sku'] }}</span>
                     {% endif %}
                     <button class="btn btn-outline-primary btn-sm" style="padding:2px 8px; font-size:11px;"
                             onclick="this.disabled=true;this.textContent='Searching...';grocerSuggest('/grocers/suggest/{{ ing['id'] }}/ing', this)">
-                        {% if ing['sku'] %}Re-match{% else %}Find in {{ active_grocer.name }}{% endif %}
+                        {% if ing['active_match'] %}Re-match{% else %}Find in {{ active_grocer.name }}{% endif %}
                     </button>
                 </td>
                 <td>

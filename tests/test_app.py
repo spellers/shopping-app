@@ -1071,3 +1071,51 @@ def test_shopping_list_back_to_results(client, sample_meal):
     response = client.get('/shopping_list')
     assert b'Back to Voting' in response.data
     assert b'vote_id' not in response.data
+
+
+def _set_ingredient_sku(db, ingredient_id, sku, retailer):
+    db.execute('UPDATE ingredients SET sku=?, retailer=? WHERE id=?',
+               (sku, retailer, ingredient_id))
+    db.commit()
+
+
+def test_meal_detail_match_scoped_to_active_grocer(client, sample_meal):
+    """A Tesco-matched ingredient must not show as matched once another
+    supermarket is active (step 7 / Q2)."""
+    db = app_module.get_db()
+    row = db.execute('SELECT id FROM ingredients WHERE meal_id=?', (sample_meal,)).fetchone()
+    _set_ingredient_sku(db, row['id'], 'TESCO-SKU-1', 'tesco')
+    db.close()
+
+    # Default active grocer is Tesco -> matched badge visible.
+    response = client.get(f'/meal_tracker/{sample_meal}')
+    assert b'TESCO-SKU-1' in response.data
+    assert b'Re-match' in response.data
+
+    # Switch to Morrisons -> the Tesco match must no longer display.
+    client.post('/grocers/use', data={'grocer': 'morrisons'})
+    response = client.get(f'/meal_tracker/{sample_meal}')
+    assert b'TESCO-SKU-1' not in response.data
+    assert b'Find in Morrisons' in response.data
+
+
+def test_persistent_ingredient_match_scoped_to_active_grocer(client):
+    """Same scoping rule on the persistent ingredients page."""
+    client.post('/persistent_ingredients', data={'name': 'Butter', 'category': 'dairy'})
+    db = app_module.get_db()
+    pid = db.execute("SELECT id FROM persistent_ingredients WHERE name='Butter'").fetchone()['id']
+    db.execute("UPDATE persistent_ingredients SET sku=?, retailer=? WHERE id=?",
+               ('MORRISONS-SKU-9', 'morrisons', pid))
+    db.commit()
+    db.close()
+
+    # Default active grocer is Tesco -> Morrisons match hidden.
+    response = client.get('/persistent_ingredients')
+    assert b'MORRISONS-SKU-9' not in response.data
+    assert b'Find in Tesco' in response.data
+
+    # Switch to Morrisons -> matched badge visible.
+    client.post('/grocers/use', data={'grocer': 'morrisons'})
+    response = client.get('/persistent_ingredients')
+    assert b'MORRISONS-SKU-9' in response.data
+    assert b'Re-match' in response.data

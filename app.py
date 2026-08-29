@@ -527,22 +527,28 @@ def meal_detail(meal_id):
     if not meal:
         db.close()
         return 'Meal not found', 404
-    ingredients = db.execute(
+    ingredients = [dict(r) for r in db.execute(
         'SELECT * FROM ingredients WHERE meal_id=? ORDER BY id', (meal_id,)
-    ).fetchall()
+    ).fetchall()]
 
     # Fetch persistent ingredients linked to this meal
-    persistent_links = db.execute('''
+    persistent_links = [dict(r) for r in db.execute('''
         SELECT pim.id, pim.meal_id, pim.persistent_ingredient_id, pim.quantity,
-               pi.name as ingredient_name, pi.category, pi.sku, pi.shareable
+               pi.name as ingredient_name, pi.category, pi.sku, pi.retailer, pi.shareable
         FROM persistent_ingredient_meals pim
         JOIN persistent_ingredients pi ON pim.persistent_ingredient_id = pi.id
         WHERE pim.meal_id = ?
         ORDER BY pim.id
-    ''', (meal_id,)).fetchall()
+    ''', (meal_id,)).fetchall()]
 
     # Fetch all persistent ingredients for the dropdown
     all_persistent = db.execute('SELECT id, name, category FROM persistent_ingredients ORDER BY name').fetchall()
+
+    # A match only counts when it's for the ACTIVE supermarket - switching
+    # retailers must not leave stale "matched" badges from another grocer.
+    grocer = _active_grocer()
+    for row in list(ingredients) + persistent_links:
+        row['active_match'] = bool(row['sku']) and (row['retailer'] or 'tesco') == grocer.key
 
     db.close()
     return render_template('meal_detail.html', meal=meal, ingredients=ingredients, persistent_links=persistent_links, all_persistent=all_persistent)
@@ -740,13 +746,18 @@ def persistent_ingredients():
     db = get_db()
     category = (request.args.get('category') or '').strip()
     if category:
-        ingredients = db.execute('SELECT * FROM persistent_ingredients WHERE category=? ORDER BY id DESC',
-                                 (category,)).fetchall()
+        ingredients = [dict(r) for r in db.execute(
+            'SELECT * FROM persistent_ingredients WHERE category=? ORDER BY id DESC',
+            (category,)).fetchall()]
     else:
-        ingredients = db.execute('SELECT * FROM persistent_ingredients ORDER BY id DESC').fetchall()
+        ingredients = [dict(r) for r in db.execute('SELECT * FROM persistent_ingredients ORDER BY id DESC').fetchall()]
     categories = [r['category'] for r in db.execute(
         'SELECT DISTINCT category FROM persistent_ingredients WHERE category IS NOT NULL AND category != "" '
         'ORDER BY category').fetchall()]
+    # A match only counts when it's for the ACTIVE supermarket.
+    grocer = _active_grocer()
+    for row in ingredients:
+        row['active_match'] = bool(row['sku']) and (row['retailer'] or 'tesco') == grocer.key
     db.close()
     return render_template('persistent_ingredients.html', ingredients=ingredients,
                            categories=categories, active_category=category)
