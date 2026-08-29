@@ -35,7 +35,7 @@ from datetime import datetime, timedelta
 
 import datadir
 
-VERSION = "1.4.1"
+VERSION = "1.5.0"
 
 REPO = "spellers/shopping-app"
 RELEASE_API = "https://api.github.com/repos/%s/releases/latest" % REPO

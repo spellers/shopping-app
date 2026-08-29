@@ -4,27 +4,35 @@ Two single-file artifacts, both built on this machine:
 
 | File | Platform | What the user does |
 |---|---|---|
-| `dist/installer/ShoppingApp-Setup-1.0.0.exe` (43 MB) | Windows 10/11 (64-bit) | Double-click, follow the wizard |
-| `dist/ShoppingApp-x86_64.AppImage` (62 MB) | Linux (64-bit) | Double-click (or `chmod +x`, then run) |
+| `dist/installer/ShoppingApp-Setup-1.5.0.exe` | Windows 10/11 (64-bit) | Double-click, follow the wizard |
+| `dist/ShoppingApp-x86_64.AppImage` | Linux (64-bit) | Double-click (or `chmod +x`, then run) |
 
 Both bundle everything the app needs: Python runtime, the web app, a
-portable Node.js runtime, and the Tesco (basketeer) CLI. The user does
-**not** need Python, Node, or any build tools.
+portable Node.js runtime, and the JS backends for the supermarket
+providers — the Tesco (basketeer) CLI, open-supermarkets (Sainsbury's)
+and playwright (headless/managed Chrome for Asda baskets and Sainsbury's
+sign-in). The user does **not** need Python, Node, or any build tools.
 
 ## One external requirement: Google Chrome
 
-The Tesco integration drives the user's own Google Chrome (headed browser,
-persistent profile in `~/.basketeer/chrome-profile`). If Chrome isn't
-installed the app still works, but Tesco pages will show a friendly
-"install Chrome" notice instead of an error.
+The supermarket integrations drive the user's own Google Chrome:
+
+- **Tesco** — headed browser, persistent profile in `~/.basketeer/chrome-profile`
+- **Asda** — headless Chrome for guest-basket calls, profile in `~/.asda/`
+- **Sainsbury's** — headed Chrome for sign-in (human completes MFA), profile in `~/.sainsburys/chrome-profile`
+
+If Chrome isn't installed the app still works, but those features will
+show a friendly "install Chrome" notice instead of an error.
+Morrisons and Waitrose use plain HTTP and need no browser.
 
 ## Where data lives
 
-All user data (SQLite DB, Flask secret key, Tesco session + Chrome profile)
-lives in a per-user data directory, never next to the executable:
+All user data (SQLite DB, Flask secret key, per-retailer sessions and
+Chrome profiles) lives in a per-user data directory, never next to the
+executable:
 
-- Linux: `~/.local/share/shopping-app/` and `~/.basketeer/`
-- Windows: `%LOCALAPPDATA%\shopping-app\` and `%USERPROFILE%\.basketeer\`
+- Linux: `~/.local/share/shopping-app/`, plus `~/.basketeer/`, `~/.asda/`, `~/.sainsburys/`, `~/.morrisons/`, `~/.waitrose/`
+- Windows: `%LOCALAPPDATA%\ShoppingApp\`, plus `%USERPROFILE%\.basketeer\`, `\.asda\`, `\.sainsburys\`, `\.morrisons\`, `\.waitrose\`
 
 This means:
 - the install dir can be on a read-only volume (AppImage is a read-only mount)
@@ -53,8 +61,8 @@ bash build/build_appimage.sh           # -> dist/ShoppingApp-x86_64.AppImage
 # Windows  (two steps: freeze under Wine, then Inno Setup)
 venv/bin/python build/build.py windows # -> dist/ShoppingApp/ (Windows PE)
 WINEPREFIX=$HOME/odysseus/data/.wine DISPLAY=:99 wine \
-  "$HOME/odysseus/data/.wine/drive_c/InnoSetup6/ISCC.exe" build/installer.iss
-                                       # -> dist/installer/ShoppingApp-Setup-1.0.0.exe
+  "$HOME/odysseus/data/.wine/drive_c/InnoSetup7/ISCC.exe" build/installer.iss
+                                       # -> dist/installer/ShoppingApp-Setup-<ver>.exe
 ```
 
 Build host prerequisites (all present here):
