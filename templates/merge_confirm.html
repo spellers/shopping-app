@@ -7,7 +7,7 @@
 <div class="card" style="max-width:640px;">
     <div class="card-body">
         <p>
-            Two ingredients in your list are linked to the same Tesco product.
+            Two ingredients in your list are linked to the same {{ active_grocer.name }} product.
             If they're really the same thing, merging them keeps your list tidy —
             meal links from the merged ingredient move to the one you keep.
         </p>
@@ -40,7 +40,7 @@
             <a href="{{ url_for('persistent_ingredients') }}" class="btn btn-secondary">Don't merge</a>
         </div>
         <p class="text-muted mt-3" style="font-size:12px;">
-            Merging removes the ingredient you don't keep. Both keep their Tesco product link.
+            Merging removes the ingredient you don't keep. Both keep their {{ active_grocer.name }} product link.
         </p>
     </div>
 </div>

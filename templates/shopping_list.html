@@ -47,7 +47,7 @@
                     <span class="badge bg-secondary">{{ item.quantity }}</span>
                     {% endif %}
                     {% if item.grocer %}
-                    <span class="badge bg-success-subtle text-success">Tesco &pound;{{ '%.2f' % (item.grocer.price or 0) }}</span>
+                    <span class="badge bg-success-subtle text-success">{{ grocer.name }} &pound;{{ '%.2f' % (item.grocer.price or 0) }}</span>
                     {% else %}
                     <span class="badge text-muted border">unmatched</span>
                     {% endif %}
@@ -56,15 +56,14 @@
         </div>
         {% endfor %}
 
-        {% set matched = items | selectattr('sku', 'ne', '') | list %}
         {% if matched and signed_in %}
         <hr style="margin:16px 0;">
-        <form method="POST" action="/tesco/add_to_basket" onsubmit="return confirm('Add {{ matched | length }} matched item(s) to your Tesco basket?')">
-            <button class="btn btn-success w-100">Add {{ matched | length }} matched item(s) to Tesco basket</button>
+        <form method="POST" action="/grocers/add_to_basket" onsubmit="return confirm('Add {{ matched | length }} matched item(s) to your {{ grocer.name }} basket?')">
+            <button class="btn btn-success w-100">Add {{ matched | length }} matched item(s) to {{ grocer.name }} basket</button>
         </form>
         {% elif matched and not signed_in %}
         <hr style="margin:16px 0;">
-        <a href="/tesco" class="btn btn-outline-success w-100">Sign in to Tesco to add basket items</a>
+        <a href="/grocers" class="btn btn-outline-success w-100">Sign in to {{ grocer.name }} to add basket items</a>
         {% endif %}
     </div>
 </div>

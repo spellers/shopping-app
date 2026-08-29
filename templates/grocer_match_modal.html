@@ -1,16 +1,16 @@
-{# Modal fragment loaded via fetch() into #tescoMatchModal. #}
+{# Match-picker modal fragment, loaded via fetch() into #grocerMatchModal. #}
 <div class="modal-header">
-    <h5 class="modal-title" style="font-weight:600;">Choose a product for "{{ name }}"</h5>
+    <h5 class="modal-title" style="font-weight:600;">Choose a {{ grocer.name }} product for "{{ name }}"</h5>
     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
 </div>
 <div class="modal-body">
     {% if error %}
     <div class="alert alert-warning mb-0">{{ error }}</div>
     {% elif not results %}
-    <p class="mb-0">No products found for "{{ name }}".</p>
+    <p class="mb-0">No {{ grocer.name }} products found for "{{ name }}".</p>
     {% else %}
     {% for r in results %}
-    <form method="POST" action="/tesco/select/{{ ingredient_id }}/{{ kind }}" class="mb-2">
+    <form method="POST" action="/grocers/select/{{ ingredient_id }}/{{ kind }}" class="mb-2">
         <input type="hidden" name="sku" value="{{ r['sku'] }}">
         <input type="hidden" name="title" value="{{ r['title'] }}">
         <input type="hidden" name="brand" value="{{ r['brand'] or '' }}">
@@ -39,16 +39,16 @@
     {% endfor %}
     {% endif %}
     <hr>
-    <form method="POST" action="/tesco/select_sku/{{ ingredient_id }}/{{ kind }}">
+    <form method="POST" action="/grocers/select_sku/{{ ingredient_id }}/{{ kind }}">
         <label class="form-label" style="font-size:13px; font-weight:600;">
-            Don't see it? Enter a Tesco product number (SKU)
+            Don't see it? Enter a {{ grocer.name }} product code
         </label>
         <div class="input-group input-group-sm">
-            <input type="text" class="form-control" name="sku" required pattern="\d+"
-                   title="SKU must be numeric" placeholder="e.g. 315390308"
-                   oninput="this.value = this.value.replace(/[^0-9]/g, '')">
-            <button class="btn btn-outline-primary">Use this SKU</button>
+            <input type="text" class="form-control" name="sku" required
+                   placeholder="Product code (find it on the shelf label / in the app)"
+                   {% if grocer.key == 'tesco' %}pattern="\d+" title="SKU must be numeric"
+                   oninput="this.value = this.value.replace(/[^0-9]/g, '')"{% endif %}>
+            <button class="btn btn-outline-primary">Use this code</button>
         </div>
-        <div class="form-text">You can find the product number in the Tesco app / on the shelf label.</div>
     </form>
 </div>

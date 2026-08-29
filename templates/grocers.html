@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Supermarkets{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h2>Supermarkets</h2>
+    <a href="/shopping_list" class="btn btn-outline-secondary">&larr; Shopping List</a>
+</div>
+
+<div class="alert alert-info" style="font-size:14px;">
+    Pick <strong>one</strong> supermarket &mdash; item lookup and the basket always use the one you selected.
+    Products matched for a different supermarket are kept, but only the selected one's
+    items count towards "Add to basket".
+</div>
+
+<div class="card mb-4">
+    <div class="card-body d-flex justify-content-between align-items-center">
+        <div>
+            <h5 style="font-weight:600; margin-bottom:4px;">Currently shopping at {{ grocer.name }}</h5>
+            <span class="text-muted" style="font-size:13px;">{{ matched }} shopping-list item(s) matched to {{ grocer.name }}.</span>
+        </div>
+        <a href="/shopping_list" class="btn btn-outline-primary btn-sm">Open shopping list</a>
+    </div>
+</div>
+
+<div class="row g-3">
+{% for row in statuses %}
+    {% set g = row['grocer'] %}
+    {% set active = g.key == grocer.key %}
+    <div class="col-md-6 col-xl">
+    <div class="card h-100">
+        <div class="card-body d-flex flex-column">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <h6 class="mb-0" style="font-weight:700; font-size:16px;">{{ g.name }}
+                    {% if active %}<span class="badge bg-primary">in use</span>{% endif %}
+                </h6>
+                {% if g.supports_auth %}
+                    {% if row['status'].get('signed_in') %}
+                    <span class="badge bg-success">Signed in</span>
+                    {% else %}
+                    <span class="badge bg-secondary">Not signed in</span>
+                    {% endif %}
+                {% else %}
+                    <span class="badge bg-outline-success text-success">No sign-in needed</span>
+                {% endif %}
+            </div>
+
+            <p class="text-muted mb-2" style="font-size:13px;">
+                {{ row['status'].get('note') or ('Basket and search available.' if not g.supports_auth else ('Basket operations are available.' if row['status'].get('signed_in') else 'You can search and match products; basket items need sign-in.')) }}
+                &middot; {{ row['cached'] }} product(s) cached
+            </p>
+
+            {% if g.key == 'waitrose' %}
+            <p class="text-muted mb-2" style="font-size:12px;">
+                Waitrose signs in with your account details (no browser window needed).
+            </p>
+            {% elif g.supports_auth and not chrome_found %}
+            <div class="alert alert-warning py-1 px-2" style="font-size:12px;">
+                Google Chrome not found - needed for {{ g.name }} sign-in.
+                Install it from <a href="https://www.google.com/chrome/">google.com/chrome</a>.
+            </div>
+            {% endif %}
+
+            <div class="mt-auto">
+                <form method="POST" action="/grocers/use">
+                    <input type="hidden" name="grocer" value="{{ g.key }}">
+                    <button class="btn w-100 {% if active %}btn-primary{% else %}btn-outline-primary{% endif %}"
+                            {% if active %}disabled{% endif %}>
+                        {% if active %}&#10003; Shopping here{% else %}Use for shopping{% endif %}
+                    </button>
+                </form>
+
+                {% if g.supports_auth and not row['status'].get('signed_in') %}
+                <hr style="margin:12px 0;">
+                {% if g.key == 'waitrose' %}
+                <form method="POST" action="/grocers/waitrose/credentials" class="d-flex flex-column gap-1">
+                    <input type="email" name="email" class="form-control form-control-sm"
+                           placeholder="Waitrose email" required>
+                    <input type="password" name="password" class="form-control form-control-sm"
+                           placeholder="Password" required>
+                    <button class="btn btn-success btn-sm" {% if row['login'].running %}disabled{% endif %}>
+                        {% if row['login'].running %}Signing in...{% else %}Sign in to Waitrose{% endif %}
+                    </button>
+                </form>
+                {% else %}
+                <form method="POST" action="/grocers/login">
+                    <input type="hidden" name="grocer" value="{{ g.key }}">
+                    <button class="btn btn-success btn-sm w-100" {% if row['login'].running %}disabled{% endif %}>
+                        {% if row['login'].running %}Sign-in in progress...{% else %}Sign in to {{ g.name }}{% endif %}
+                    </button>
+                </form>
+                {% endif %}
+                {% endif %}
+
+                {% if row['login'].running %}
+                <div class="alert alert-info py-1 px-2 mt-2" style="font-size:12px;">
+                    {% if g.key == 'waitrose' %}
+                    Signing in &mdash; this page updates automatically.
+                    {% else %}
+                    A Chrome window should have opened. Complete the sign-in there &mdash;
+                    this page updates automatically.
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    </div>
+{% endfor %}
+</div>
+
+<div class="card mt-3">
+    <div class="card-body">
+        <h6 style="font-weight:600; margin-bottom:10px;">How it works</h6>
+        <ol class="text-muted mb-0" style="font-size:13px; padding-left:20px;">
+            <li>Match ingredients to products from the <a href="/meal_tracker">meal pages</a> or <a href="/persistent_ingredients">persistent ingredients</a> &mdash; "Find in {{ grocer.name }}" always searches the supermarket you have selected.</li>
+            <li>Generate a shopping list from a completed vote &mdash; matched items show the product and price.</li>
+            <li>On the shopping list, press "Add to {{ grocer.name }} basket" to push every matched item in one go.</li>
+            <li>Checkout always finishes on the supermarket&rsquo;s own site &mdash; you complete slots and payment yourself.</li>
+        </ol>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+// While any sign-in is running, refresh every 4s so the status flips
+// to "Signed in" as soon as the session appears - no manual refresh.
+setTimeout(function () { window.location.reload(); }, 4000);
+</script>
+{% endblock %}

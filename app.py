@@ -32,6 +32,19 @@ def inject_update_status():
     return dict(update=updates.status())
 
 
+def _active_grocer():
+    """The supermarket selected for the whole app (Q2: one retailer at a
+    time; item lookup and the basket are always scoped to it). Falls back
+    to Tesco for old sessions / first run."""
+    return providers.get_grocer(session.get('active_grocer', 'tesco')) or _TESCO
+
+
+@app.context_processor
+def inject_grocers():
+    """Every page gets the active grocer + all registered providers."""
+    return dict(active_grocer=_active_grocer(), grocers=providers.list_grocers())
+
+
 @app.route('/updates/status')
 def updates_status():
     """JSON endpoint: current version + latest release info."""
@@ -739,11 +752,12 @@ def persistent_ingredients():
                            categories=categories, active_category=category)
 
 
-def _sku_conflict(db, sku, ingredient_id, table):
-    """Return the row of a *different* ingredient in `table` that already uses `sku`."""
+def _sku_conflict(db, sku, ingredient_id, table, retailer):
+    """Return the row of a *different* ingredient in `table` that already uses
+    `sku` at the SAME retailer (identical codes at other retailers are fine)."""
     return db.execute(
-        'SELECT * FROM ' + table + ' WHERE sku=? AND id != ? LIMIT 1',
-        (sku, ingredient_id)).fetchone()
+        'SELECT * FROM ' + table + ' WHERE sku=? AND retailer=? AND id != ? LIMIT 1',
+        (sku, retailer, ingredient_id)).fetchone()
 
 
 @app.route('/merge_confirm/<int:keep_id>/<int:drop_id>')
@@ -1055,40 +1069,72 @@ def shopping_list_get():
                     (item.get('retailer') or 'tesco', item['sku'])).fetchone()
                 if row:
                     item['grocer'] = dict(row)
-    signed_in = _TESCO.auth_status()['signed_in']
-    vote_id = request.args.get('vote_id', '')
-    return render_template('shopping_list.html', items=items, meals=meals, vote_id=vote_id, signed_in=signed_in)
+    grocer = _active_grocer()
+    for item in items:
+        # Only items matched against THIS supermarket count as matched.
+        if (item.get('retailer') or 'tesco') != grocer.key:
+            item['grocer'] = None
+    matched = [i for i in items if i['sku'] and i['grocer']]
+    return render_template('shopping_list.html', items=items, meals=meals,
+                           vote_id=request.args.get('vote_id', ''),
+                           signed_in=grocer.auth_status()['signed_in'],
+                           matched=matched, grocer=grocer)
 
-@app.route('/tesco')
+@app.route('/tesco', methods=['GET', 'POST'])
 def tesco_status_page():
-    status = _TESCO.auth_status()
-    login = _TESCO.login_status()
+    """Old Tesco-only pages now live at /grocers (step 7, Q2)."""
+    return redirect(url_for('grocers_hub'))
+
+
+def _form_float(field):
+    raw = (request.form.get(field) or '').strip()
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
+
+
+# ------------------------------------------------------------------ grocers
+# App-wide supermarket selection (Q2): the user picks one supermarket and
+# item lookup + the basket are always scoped to it.
+
+@app.route('/grocers')
+def grocers_hub():
+    """One page per selected supermarket: status, sign-in, "use for shopping"."""
+    grocer = _active_grocer()
     db = get_db()
-    cached = db.execute(
-        "SELECT COUNT(*) AS n FROM grocer_products WHERE retailer='tesco'").fetchone()['n']
+    statuses = []
+    for g in providers.list_grocers():
+        try:
+            status = g.auth_status()
+        except Exception:
+            status = {'signed_in': False}
+        try:
+            login = g.login_status()
+        except Exception:
+            login = {'running': False}
+        try:
+            cached = db.execute('SELECT COUNT(*) AS n FROM grocer_products WHERE retailer=?',
+                                (g.key,)).fetchone()['n']
+        except Exception:
+            cached = 0
+        statuses.append({'grocer': g, 'status': status, 'login': login, 'cached': cached})
+    matched = db.execute(
+        "SELECT COUNT(DISTINCT sku) AS n FROM shopping_list_items "
+        "WHERE retailer=? AND sku IS NOT NULL AND sku != ''", (grocer.key,)).fetchone()['n']
     db.close()
-    return render_template('tesco_status.html', signed_in=status['signed_in'],
-                           login=login, cached=cached,
-                           chrome_found=bool(datadir.find_chrome()))
+    return render_template('grocers.html', grocer=grocer, statuses=statuses,
+                           matched=matched, chrome_found=bool(datadir.find_chrome()))
 
 
-@app.route('/tesco/login', methods=['POST'])
-def tesco_login():
-    if _TESCO.login():
-        flash('Sign-in started - complete the Tesco login in the Chrome window that opened.', 'success')
-    else:
-        flash('Sign-in is already in progress - check its status below.', 'warning')
-    return redirect(url_for('tesco_status_page'))
-
-
-@app.route('/tesco/login_status')
-def tesco_login_status():
-    return (_TESCO.login_status(), _TESCO.auth_status())
-
-
-@app.route('/tesco/suggest/<int:ingredient_id>/<kind>')
-def tesco_suggest(ingredient_id, kind):
-    """Return the match-picker modal (HTML fragment) with up to 5 live results."""
+@app.route('/grocers/suggest/<int:ingredient_id>/<kind>')
+def grocers_suggest(ingredient_id, kind):
+    """Match-picker modal (HTML fragment) for the ACTIVE supermarket."""
+    grocer = _active_grocer()
     db = get_db()
     if kind == 'ing':
         ing = db.execute('SELECT * FROM ingredients WHERE id=?', (ingredient_id,)).fetchone()
@@ -1102,25 +1148,24 @@ def tesco_suggest(ingredient_id, kind):
         return 'Ingredient not found', 404
     error = None
     try:
-        results = _TESCO.search(ing['name'], limit=5)
+        results = grocer.search(ing['name'], limit=5)
     except providers.GrocerError as exc:
         results, error = [], str(exc)
-    return render_template(
-        'tesco_match_modal.html', name=ing['name'], results=results,
-        error=error, ingredient_id=ingredient_id, kind=kind,
-    )
+    return render_template('grocer_match_modal.html', grocer=grocer,
+                           name=ing['name'], results=results, error=error,
+                           ingredient_id=ingredient_id, kind=kind)
 
 
-@app.route('/tesco/select/<int:ingredient_id>/<kind>', methods=['POST'])
-def tesco_select_product(ingredient_id, kind):
-    """Store the user-chosen Tesco product for an ingredient."""
+@app.route('/grocers/select/<int:ingredient_id>/<kind>', methods=['POST'])
+def grocers_select_product(ingredient_id, kind):
+    """Store the user-chosen product for an ingredient (active supermarket)."""
+    grocer = _active_grocer()
     sku = (request.form.get('sku') or '').strip()
     title = (request.form.get('title') or '').strip()
     if not sku:
         return 'No product selected', 400
     db = get_db()
-    # Cache the picked product so the shopping list can show title/price.
-    _cache_product(db, 'tesco', {
+    _cache_product(db, grocer.key, {
         'sku': sku, 'title': title,
         'brand': (request.form.get('brand') or '').strip(),
         'price': _form_float('price'), 'unit_price': _form_float('unit_price'),
@@ -1133,46 +1178,37 @@ def tesco_select_product(ingredient_id, kind):
             db.close()
             return 'Ingredient not found', 404
         db.execute('UPDATE ingredients SET sku=?, retailer=? WHERE id=?',
-                   (sku, 'tesco', ingredient_id))
+                   (sku, grocer.key, ingredient_id))
         db.commit()
         db.close()
-        flash(f"Matched \"{title or sku}\"", 'success')
+        flash(f"Matched \"{title or sku}\" ({grocer.name})", 'success')
         return redirect(url_for('meal_detail', meal_id=row['meal_id']))
     row = db.execute('SELECT * FROM persistent_ingredients WHERE id=?', (ingredient_id,)).fetchone()
     if not row:
         db.close()
         return 'Ingredient not found', 404
-    conflict = _sku_conflict(db, sku, ingredient_id, 'persistent_ingredients')
+    conflict = _sku_conflict(db, sku, ingredient_id, 'persistent_ingredients', grocer.key)
     db.execute('UPDATE persistent_ingredients SET sku=?, retailer=? WHERE id=?',
-               (sku, 'tesco', ingredient_id))
+               (sku, grocer.key, ingredient_id))
     db.commit()
     db.close()
     if conflict:
         return redirect(url_for('merge_confirm', keep_id=ingredient_id, drop_id=conflict['id']))
-    flash(f"Matched \"{title or sku}\"", 'success')
+    flash(f"Matched \"{title or sku}\" ({grocer.name})", 'success')
     return redirect(url_for('persistent_ingredients'))
 
 
-def _form_float(field):
-    raw = (request.form.get(field) or '').strip()
-    if not raw:
-        return None
-    try:
-        return float(raw)
-    except ValueError:
-        return None
+@app.route('/grocers/select_sku/<int:ingredient_id>/<kind>', methods=['POST'])
+def grocers_select_sku(ingredient_id, kind):
+    """Store a manually entered product code for the active supermarket.
 
-
-@app.route('/tesco/select_sku/<int:ingredient_id>/<kind>', methods=['POST'])
-def tesco_select_sku(ingredient_id, kind):
-    """Store a manually entered Tesco SKU for an ingredient.
-
-    Looks the product up to display its title; if the lookup fails the SKU
-    is still saved (the user said they know it) with a warning.
+    The code is looked up to display its title; if the lookup fails it is
+    still saved (the user said they know it) with a warning.
     """
+    grocer = _active_grocer()
     sku = (request.form.get('sku') or '').strip()
-    if not sku or not sku.isdigit():
-        return 'Enter a numeric Tesco SKU', 400
+    if not sku:
+        return 'Enter a product code', 400
     if kind == 'ing':
         table = 'ingredients'
     elif kind == 'persist':
@@ -1188,98 +1224,142 @@ def tesco_select_sku(ingredient_id, kind):
                 else url_for('persistent_ingredients'))
     lookup_failed = False
     try:
-        product = _TESCO.get_product(sku)
+        product = grocer.get_product(sku)
         title = product['title'] or sku
-        _cache_product(db, 'tesco', product, matched_term=row['name'])
+        _cache_product(db, grocer.key, product, matched_term=row['name'])
     except providers.GrocerError:
         title, lookup_failed = sku, True
     db.execute(f'UPDATE {table} SET sku=?, retailer=? WHERE id=?',
-               (sku, 'tesco', ingredient_id))
+               (sku, grocer.key, ingredient_id))
     db.commit()
     conflict = None
     if table == 'persistent_ingredients':
-        conflict = _sku_conflict(db, sku, ingredient_id, 'persistent_ingredients')
+        conflict = _sku_conflict(db, sku, ingredient_id, 'persistent_ingredients', grocer.key)
     db.close()
     if conflict:
         return redirect(url_for('merge_confirm', keep_id=ingredient_id, drop_id=conflict['id']))
     if lookup_failed:
-        flash(f"Could not look up SKU {sku} - saved it anyway. Check the match later.", 'warning')
+        flash(f"Could not look up {grocer.name} code {sku} - saved it anyway.", 'warning')
     else:
-        flash(f"Matched \"{title}\" (SKU {sku})", 'success')
+        flash(f"Matched \"{title}\" ({grocer.name}, code {sku})", 'success')
     return redirect(back_url)
 
 
-@app.route('/tesco/match/<int:ingredient_id>', methods=['POST'])
-def tesco_match_ingredient(ingredient_id):
-    """Match a regular meal ingredient to a Tesco product (top result)."""
+@app.route('/grocers/match/<int:ingredient_id>', methods=['POST'])
+def grocers_match_ingredient(ingredient_id):
+    """Match a meal ingredient to the active supermarket (top result)."""
+    grocer = _active_grocer()
     db = get_db()
     ing = db.execute('SELECT * FROM ingredients WHERE id=?', (ingredient_id,)).fetchone()
     if not ing:
         db.close()
         return 'Ingredient not found', 404
-    product, _results = match_ingredient_tesco(ing['name'], retailer='tesco')
+    product, _results = match_ingredient_tesco(ing['name'], retailer=grocer.key)
     if product:
         db.execute('UPDATE ingredients SET sku=?, retailer=? WHERE id=?',
-                   (product['sku'], 'tesco', ingredient_id))
+                   (product['sku'], grocer.key, ingredient_id))
         db.commit()
-        flash(f"Matched \"{product['title']}\"", 'success')
+        flash(f"Matched \"{product['title']}\" ({grocer.name})", 'success')
     else:
-        flash(f"No Tesco product found for \"{ing['name']}\". Try again later.", 'warning')
+        flash(f"No {grocer.name} product found for \"{ing['name']}\". Try again later.", 'warning')
     db.close()
     return redirect(url_for('meal_detail', meal_id=ing['meal_id']))
 
 
-@app.route('/tesco/match_persistent/<int:ingredient_id>', methods=['POST'])
-def tesco_match_persistent(ingredient_id):
-    """Match a persistent ingredient to a Tesco product (top result)."""
+@app.route('/grocers/match_persistent/<int:ingredient_id>', methods=['POST'])
+def grocers_match_persistent(ingredient_id):
+    """Match a persistent ingredient to the active supermarket (top result)."""
+    grocer = _active_grocer()
     db = get_db()
     ing = db.execute('SELECT * FROM persistent_ingredients WHERE id=?', (ingredient_id,)).fetchone()
     if not ing:
         db.close()
         return 'Ingredient not found', 404
-    product, _results = match_ingredient_tesco(ing['name'], retailer='tesco')
+    product, _results = match_ingredient_tesco(ing['name'], retailer=grocer.key)
     conflict = None
     if product:
         db.execute('UPDATE persistent_ingredients SET sku=?, retailer=? WHERE id=?',
-                   (product['sku'], 'tesco', ingredient_id))
+                   (product['sku'], grocer.key, ingredient_id))
         db.commit()
-        conflict = _sku_conflict(db, product['sku'], ingredient_id, 'persistent_ingredients')
-        flash(f"Matched \"{product['title']}\"", 'success')
+        conflict = _sku_conflict(db, product['sku'], ingredient_id, 'persistent_ingredients', grocer.key)
+        flash(f"Matched \"{product['title']}\" ({grocer.name})", 'success')
     else:
-        flash(f"No Tesco product found for \"{ing['name']}\". Try again later.", 'warning')
+        flash(f"No {grocer.name} product found for \"{ing['name']}\". Try again later.", 'warning')
     db.close()
     if conflict:
         return redirect(url_for('merge_confirm', keep_id=ingredient_id, drop_id=conflict['id']))
     return redirect(url_for('persistent_ingredients'))
 
 
-@app.route('/tesco/add_to_basket', methods=['POST'])
-def tesco_add_to_basket():
-    """Add every shopping-list item that has a Tesco SKU to the basket."""
-    if not _TESCO.auth_status()['signed_in']:
-        flash('Sign in to Tesco first.', 'warning')
-        return redirect(url_for('tesco_status_page'))
+@app.route('/grocers/add_to_basket', methods=['POST'])
+def grocers_add_to_basket():
+    """Add every shopping-list item matched to the ACTIVE supermarket."""
+    grocer = _active_grocer()
+    if grocer.supports_auth and not grocer.auth_status()['signed_in']:
+        flash(f'Sign in to {grocer.name} first.', 'warning')
+        return redirect(url_for('grocers_hub'))
     db = get_db()
     items = db.execute(
         'SELECT * FROM shopping_list_items WHERE retailer=? AND sku IS NOT NULL AND sku != ""',
-        ('tesco',)).fetchall()
+        (grocer.key,)).fetchall()
     db.close()
     if not items:
-        flash('No shopping list items have Tesco products matched yet.', 'warning')
+        flash(f'No shopping list items have {grocer.name} products matched yet.', 'warning')
         return redirect(url_for('shopping_list_get'))
     added, errors = 0, []
     for item in items:
-        qty = _TESCO.parse_qty(item['quantity'])
+        qty = grocer.parse_qty(item['quantity'])
         try:
-            _TESCO.basket_set(item['sku'], qty)
+            grocer.basket_set(item['sku'], qty)
             added += 1
         except providers.GrocerError as exc:
             errors.append(f"{item['name']}: {str(exc)[:120]}")
     if errors:
         flash('Added %d item(s); %d failed: %s' % (added, len(errors), '; '.join(errors[:3])), 'warning')
     else:
-        flash(f'Added {added} item(s) to your Tesco basket!', 'success')
+        flash(f'Added {added} item(s) to your {grocer.name} basket!', 'success')
     return redirect(url_for('shopping_list_get'))
+
+
+@app.route('/grocers/use', methods=['POST'])
+def grocers_use():
+    """Make the chosen supermarket the active one for the whole app."""
+    key = (request.form.get('grocer') or '').strip()
+    grocer = providers.get_grocer(key)
+    if not grocer:
+        flash(f'Unknown supermarket: {key}', 'warning')
+        return redirect(url_for('grocers_hub'))
+    session['active_grocer'] = grocer.key
+    flash(f'Using {grocer.name} for item lookup and the basket.', 'success')
+    return redirect(request.form.get('next') or url_for('grocers_hub'))
+
+
+@app.route('/grocers/login', methods=['POST'])
+def grocers_login():
+    key = (request.form.get('grocer') or '').strip()
+    grocer = providers.get_grocer(key)
+    if not grocer or not grocer.supports_auth:
+        flash('That supermarket needs no sign-in.', 'warning')
+        return redirect(url_for('grocers_hub'))
+    if grocer.login():
+        flash(f'Sign-in started - complete the {grocer.name} login in the window that opened.', 'success')
+    else:
+        flash('Sign-in is already in progress - check its status below.', 'warning')
+    return redirect(url_for('grocers_hub'))
+
+
+@app.route('/grocers/waitrose/credentials', methods=['POST'])
+def grocers_waitrose_credentials():
+    """Save Waitrose credentials, then start sign-in (its auth has no browser)."""
+    try:
+        providers.get_grocer('waitrose').save_credentials(
+            request.form.get('email'), request.form.get('password'))
+    except providers.GrocerError as exc:
+        flash(str(exc), 'warning')
+        return redirect(url_for('grocers_hub'))
+    if providers.get_grocer('waitrose').login():
+        flash('Waitrose credentials saved - signing in now.', 'success')
+    return redirect(url_for('grocers_hub'))
 
 
 if __name__ == "__main__":

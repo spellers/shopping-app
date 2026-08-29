@@ -430,6 +430,21 @@ def auth_status():
     return {'signed_in': signed_in, 'note': note}
 
 
+def save_credentials(email, password):
+    """Store the customer's Waitrose email + password so sign-in is one
+    click. Written with 0600 permissions (password in the clear on disk -
+    same trust model as the other providers' session files)."""
+    email = (email or '').strip()
+    password = password or ''
+    if not email or not password:
+        raise WaitroseError('Enter both email and password')
+    os.makedirs(_STATE_DIR, exist_ok=True)
+    fd = os.open(_CREDENTIALS_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w') as fh:
+        json.dump({'email': email, 'password': password}, fh)
+    return True
+
+
 # background login state (polled by the app like the other providers)
 _LOGIN_LOCK = threading.Lock()
 _LOGIN_STATE = {'running': False, 'error': '', 'note': ''}
@@ -511,6 +526,9 @@ class WaitroseGrocer(Grocer):
 
     def login_status(self):
         return self._fn('login_status')()
+
+    def save_credentials(self, email, password):
+        return self._fn('save_credentials')(email, password)
 
     def basket(self):
         return self._fn('basket')()

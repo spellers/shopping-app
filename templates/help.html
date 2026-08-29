@@ -15,7 +15,7 @@
             <li><strong>Import a recipe</strong> <span class="badge bg-warning text-dark">experimental</span> &mdash; on the <a href="/meal_tracker">Meals</a> page, paste a recipe link (for example, <a href="https://www.bbcgoodfood.com/recipes/chicken-sweetcorn-egg-fried-rice" target="_blank" rel="noopener">this BBC Good Food recipe</a>) into the import box next to <em>New Meal</em>. The app creates the meal and adds its ingredients &mdash; any ingredients you don&rsquo;t have yet are added to your <a href="/persistent_ingredients">Ingredients</a> list automatically. It works on most recipe websites, but not all sites can be read.</li>
             <li><strong>Vote on dinner</strong> &mdash; create a <a href="/votes">Vote</a> with a few meal options, share the page, and everyone picks up to three favourites. The results screen shows who&rsquo;s voting and the current tally.</li>
             <li><strong>Build your shopping list</strong> &mdash; from the vote results, select the winning meals and hit <em>Create shopping list</em>. Ingredients are combined automatically &mdash; shared goods appear once, per-meal goods are multiplied by the number of meals that use them.</li>
-            <li><strong>Buy and tick off</strong> &mdash; on the <a href="/shopping_list">Shopping List</a> page, tick items as you shop. Matched Tesco products show their price, and you can send the whole list to your Tesco basket in one click.</li>
+            <li><strong>Buy and tick off</strong> &mdash; on the <a href="/shopping_list">Shopping List</a> page, tick items as you shop. Pick which supermarket you shop at from the <a href="/grocers">Supermarkets</a> page &mdash; matched products then show their price, and you can send the whole list to your basket there in one click.</li>
         </ol>
     </div>
 </div>
@@ -24,7 +24,7 @@
     <div class="card-body">
         <h5 style="font-weight:600; margin-bottom:10px;">A few things worth knowing</h5>
         <ul style="line-height:1.9; margin-bottom:0;">
-            <li>The <strong>Tesco</strong> integration needs you to sign in once with your Tesco account (a browser window opens). If the connection drops after a system restart, just sign in again from the Tesco page.</li>
+            <li>For <strong>Tesco and Sainsbury&rsquo;s</strong> you sign in once with your account (a browser window opens); <strong>Waitrose</strong> signs in with your account details; <strong>Asda and Morrisons</strong> work with a guest session and need nothing. If a connection drops after a system restart, just sign in again from the Supermarkets page.</li>
             <li><strong>Updating:</strong> the app checks for new versions in the background. When one is available, a banner appears at the top of the page &mdash; click <em>Update now</em> and the app updates and restarts itself; your data is kept.</li>
             <li>Your data (meals, votes, shopping list) is stored locally on this computer, so everything works offline except Tesco product searches.</li>
         </ul>
@@ -54,10 +54,10 @@
             </div>
             <div class="accordion-item mb-1">
                 <h3 class="accordion-header">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#qa3">Why does it link to Tesco&rsquo;s specifically, why not Sainsburys or Morrisons etc?</button>
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#qa3">Which supermarkets does it work with?</button>
                 </h3>
                 <div id="qa3" class="accordion-collapse collapse" data-bs-parent="#qaAccordion">
-                    <div class="accordion-body">Because someone far smarter than me wrote a tool that could integrate to the Tesco basket. Big supermarkets do not provide the tools to do this themselves so having a system to actually be able to update a shopping basket is a little tricky. If I can find tools that will allow me to connect other supermarkets in the same way, I&rsquo;ll see what I can do to incorporate it.</div>
+                    <div class="accordion-body">Currently <strong>Tesco, Sainsbury&rsquo;s, Asda, Morrisons and Waitrose</strong>. Tesco got here first (thanks to a tool someone far smarter than me wrote), and the others were hooked up the same way. Big supermarkets don&rsquo;t provide the tools to update their baskets themselves, so each one took some reverse-engineering work. You can switch whichever one you shop at from the <a href="/grocers">Supermarkets</a> page &mdash; products matched at one store are kept, so you can switch back and forth.</div>
                 </div>
             </div>
             <div class="accordion-item mb-1">

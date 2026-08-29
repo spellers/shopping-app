@@ -44,7 +44,7 @@
     <div class="card-body">
         <table class="table table-sm" style="font-size:13px;">
             <thead>
-                <tr><th>Name</th><th>Category</th><th>Per meal</th><th>Tesco product</th><th></th></tr>
+                <tr><th>Name</th><th>Category</th><th>Per meal</th><th>{{ active_grocer.name }} product</th><th></th></tr>
             </thead>
             <tbody>
             {% for ing in ingredients %}
@@ -76,8 +76,8 @@
                     <span class="badge bg-success-subtle text-success">{{ ing['sku'] }}</span>
                     {% endif %}
                     <button class="btn btn-outline-primary btn-sm" style="padding:2px 8px; font-size:11px;"
-                            onclick="this.disabled=true;this.textContent='Searching...';tescoSuggest('/tesco/suggest/{{ ing['id'] }}/persist', this)">
-                        {% if ing['sku'] %}Re-match{% else %}Find in Tesco{% endif %}
+                            onclick="this.disabled=true;this.textContent='Searching...';grocerSuggest('/grocers/suggest/{{ ing['id'] }}/persist', this)">
+                        {% if ing['sku'] %}Re-match{% else %}Find in {{ active_grocer.name }}{% endif %}
                     </button>
                 </td>
                 <td>

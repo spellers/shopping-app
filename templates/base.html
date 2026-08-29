@@ -203,7 +203,7 @@
         <a href="/shopping_list">Shopping List</a>
         <a href="/votes">Voting</a>
         <a href="/persistent_ingredients">Ingredients</a>
-        <a href="/tesco">Tesco</a>
+        <a href="/grocers">Supermarkets</a>
         <a href="/help">Help</a>
         <button type="button" class="theme-toggle" id="themeToggle" title="Toggle light/dark mode">☀️</button>
     </div>
@@ -258,16 +258,16 @@
                 paint();
             });
         })();
-        async function tescoSuggest(url, btn) {
+        async function grocerSuggest(url, btn) {
             try {
                 const resp = await fetch(url);
                 if (!resp.ok) throw new Error('request failed (' + resp.status + ')');
                 const fragment = await resp.text();
-                let modalEl = document.getElementById('tescoMatchModal');
+                let modalEl = document.getElementById('grocerMatchModal');
                 if (!modalEl) {
                     modalEl = document.createElement('div');
                     modalEl.className = 'modal fade';
-                    modalEl.id = 'tescoMatchModal';
+                    modalEl.id = 'grocerMatchModal';
                     modalEl.tabIndex = -1;
                     document.body.appendChild(modalEl);
                 }
@@ -277,7 +277,7 @@
                 if (btn) { btn.disabled = false; }
             } catch (e) {
                 if (btn) { btn.disabled = false; btn.textContent = 'Retry'; }
-                alert('Could not reach the Tesco catalogue: ' + e.message);
+                alert('Could not reach the supermarket catalogue: ' + e.message);
             }
         }
     </script>

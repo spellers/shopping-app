@@ -200,7 +200,7 @@ def test_tesco_select_persistent_sku_conflict_offers_merge(client, monkeypatch):
     existing_id = db.execute("SELECT id FROM persistent_ingredients WHERE name='Rice'").fetchone()['id']
     new_id = db.execute("SELECT id FROM persistent_ingredients WHERE name='Rice (imported)'").fetchone()['id']
     db.close()
-    response = client.post(f'/tesco/select/{new_id}/persist', data={
+    response = client.post(f'/grocers/select/{new_id}/persist', data={
         'sku': '111222333', 'title': 'Tesco Rice 600g',
     }, follow_redirects=True)
     assert response.status_code == 200
@@ -217,7 +217,7 @@ def test_tesco_select_persistent_no_conflict(client):
     db.commit()
     pid = db.execute("SELECT id FROM persistent_ingredients WHERE name='Oat Flakes'").fetchone()['id']
     db.close()
-    response = client.post(f'/tesco/select/{pid}/persist', data={
+    response = client.post(f'/grocers/select/{pid}/persist', data={
         'sku': '999888777', 'title': 'Tesco Oat Flakes 1kg',
     }, follow_redirects=True)
     assert response.status_code == 200
@@ -520,18 +520,24 @@ def _mock_search(term):
     }]
 
 
-def test_tesco_status_page(client, monkeypatch):
+def test_grocers_hub_not_signed_in(client, monkeypatch):
     monkeypatch.setattr(app_module.providers.tesco, 'auth_status', lambda: {'signed_in': False})
-    response = client.get('/tesco')
+    response = client.get('/grocers')
     assert response.status_code == 200
     assert b'Not signed in' in response.data
 
 
-def test_tesco_status_signed_in(client, monkeypatch):
+def test_grocers_hub_signed_in(client, monkeypatch):
     monkeypatch.setattr(app_module.providers.tesco, 'auth_status', lambda: {'signed_in': True})
-    response = client.get('/tesco')
+    response = client.get('/grocers')
     assert response.status_code == 200
     assert b'Signed in' in response.data
+
+
+def test_tesco_old_routes_redirect_to_hub(client):
+    assert client.get('/tesco').status_code == 302
+    assert client.get('/tesco').headers['Location'] == '/grocers'
+    assert client.post('/tesco').status_code == 302
 
 
 def test_tesco_match_ingredient(client, sample_meal, monkeypatch):
@@ -539,7 +545,7 @@ def test_tesco_match_ingredient(client, sample_meal, monkeypatch):
     db = app_module.get_db()
     ing_id = db.execute('SELECT id FROM ingredients WHERE meal_id=?', (sample_meal,)).fetchone()['id']
     db.close()
-    response = client.post(f'/tesco/match/{ing_id}', follow_redirects=True)
+    response = client.post(f'/grocers/match/{ing_id}', follow_redirects=True)
     assert response.status_code == 200
     db = app_module.get_db()
     sku = db.execute('SELECT sku FROM ingredients WHERE id=?', (ing_id,)).fetchone()['sku']
@@ -554,7 +560,7 @@ def test_tesco_match_no_results(client, sample_meal, monkeypatch):
     db = app_module.get_db()
     ing_id = db.execute('SELECT id FROM ingredients WHERE meal_id=?', (sample_meal,)).fetchone()['id']
     db.close()
-    response = client.post(f'/tesco/match/{ing_id}', follow_redirects=True)
+    response = client.post(f'/grocers/match/{ing_id}', follow_redirects=True)
     assert response.status_code == 200
     db = app_module.get_db()
     sku = db.execute('SELECT sku FROM ingredients WHERE id=?', (ing_id,)).fetchone()['sku']
@@ -569,7 +575,7 @@ def test_tesco_match_persistent(client, monkeypatch):
     pid = db.execute('SELECT last_insert_rowid()').fetchone()[0]
     db.commit()
     db.close()
-    response = client.post(f'/tesco/match_persistent/{pid}', follow_redirects=True)
+    response = client.post(f'/grocers/match_persistent/{pid}', follow_redirects=True)
     assert response.status_code == 200
     db = app_module.get_db()
     sku = db.execute('SELECT sku FROM persistent_ingredients WHERE id=?', (pid,)).fetchone()['sku']
@@ -593,12 +599,12 @@ def test_tesco_suggest_ingredient_modal(client, sample_meal, monkeypatch):
     db = app_module.get_db()
     ing = db.execute('SELECT id, name FROM ingredients WHERE meal_id=?', (sample_meal,)).fetchone()
     db.close()
-    response = client.get(f'/tesco/suggest/{ing["id"]}/ing')
+    response = client.get(f'/grocers/suggest/{ing["id"]}/ing')
     assert response.status_code == 200
-    assert b'Choose a product for' in response.data
+    assert b'Choose a Tesco product for' in response.data
     assert b'Option A ' + ing['name'].encode() in response.data
     assert b'Option C ' + ing['name'].encode() in response.data
-    assert b'/tesco/select/' + str(ing['id']).encode() + b'/ing' in response.data
+    assert b'/grocers/select/' + str(ing['id']).encode() + b'/ing' in response.data
 
 
 def test_tesco_suggest_persistent_modal(client, monkeypatch):
@@ -608,10 +614,10 @@ def test_tesco_suggest_persistent_modal(client, monkeypatch):
     pid = db.execute('SELECT last_insert_rowid()').fetchone()[0]
     db.commit()
     db.close()
-    response = client.get(f'/tesco/suggest/{pid}/persist')
+    response = client.get(f'/grocers/suggest/{pid}/persist')
     assert response.status_code == 200
     assert b'Option A Butter' in response.data
-    assert b'/tesco/select/' + str(pid).encode() + b'/persist' in response.data
+    assert b'/grocers/select/' + str(pid).encode() + b'/persist' in response.data
 
 
 def test_tesco_suggest_error_shown(client, sample_meal, monkeypatch):
@@ -621,14 +627,14 @@ def test_tesco_suggest_error_shown(client, sample_meal, monkeypatch):
     db = app_module.get_db()
     ing_id = db.execute('SELECT id FROM ingredients WHERE meal_id=?', (sample_meal,)).fetchone()['id']
     db.close()
-    response = client.get(f'/tesco/suggest/{ing_id}/ing')
+    response = client.get(f'/grocers/suggest/{ing_id}/ing')
     assert response.status_code == 200
     assert b'Tesco API timed out' in response.data
 
 
 def test_tesco_suggest_unknown_ingredient(client):
-    assert client.get('/tesco/suggest/999999/ing').status_code == 404
-    assert client.get('/tesco/suggest/1/wrong').status_code == 404
+    assert client.get('/grocers/suggest/999999/ing').status_code == 404
+    assert client.get('/grocers/suggest/1/wrong').status_code == 404
 
 
 def test_tesco_select_ingredient(client, sample_meal):
@@ -636,7 +642,7 @@ def test_tesco_select_ingredient(client, sample_meal):
     ing_id = db.execute('SELECT id FROM ingredients WHERE meal_id=?', (sample_meal,)).fetchone()['id']
     db.close()
     response = client.post(
-        f'/tesco/select/{ing_id}/ing',
+        f'/grocers/select/{ing_id}/ing',
         data={'sku': '555666777', 'title': 'My Chosen Product'},
         follow_redirects=True,
     )
@@ -656,9 +662,9 @@ def test_tesco_select_persistent_rematch(client, monkeypatch):
     pid = db.execute('SELECT last_insert_rowid()').fetchone()[0]
     db.commit()
     db.close()
-    client.post(f'/tesco/match_persistent/{pid}')
+    client.post(f'/grocers/match_persistent/{pid}')
     response = client.post(
-        f'/tesco/select/{pid}/persist',
+        f'/grocers/select/{pid}/persist',
         data={'sku': '888999000', 'title': 'Chosen Cheese'},
         follow_redirects=True,
     )
@@ -673,7 +679,7 @@ def test_tesco_select_missing_sku_rejected(client, sample_meal):
     db = app_module.get_db()
     ing_id = db.execute('SELECT id FROM ingredients WHERE meal_id=?', (sample_meal,)).fetchone()['id']
     db.close()
-    assert client.post(f'/tesco/select/{ing_id}/ing', data={'sku': ''}).status_code == 400
+    assert client.post(f'/grocers/select/{ing_id}/ing', data={'sku': ''}).status_code == 400
 
 
 def _mock_get_product(sku):
@@ -695,7 +701,7 @@ def test_tesco_select_sku_ingredient(client, sample_meal, monkeypatch):
     ing_id = db.execute('SELECT id FROM ingredients WHERE meal_id=?', (sample_meal,)).fetchone()['id']
     db.close()
     response = client.post(
-        f'/tesco/select_sku/{ing_id}/ing',
+        f'/grocers/select_sku/{ing_id}/ing',
         data={'sku': '123456789'},
         follow_redirects=True,
     )
@@ -715,7 +721,7 @@ def test_tesco_select_sku_persistent(client, monkeypatch):
     db.commit()
     db.close()
     response = client.post(
-        f'/tesco/select_sku/{pid}/persist',
+        f'/grocers/select_sku/{pid}/persist',
         data={'sku': '987654321'},
         follow_redirects=True,
     )
@@ -734,7 +740,7 @@ def test_tesco_select_sku_unknown_lookup_still_saves(client, sample_meal, monkey
     ing_id = db.execute('SELECT id FROM ingredients WHERE meal_id=?', (sample_meal,)).fetchone()['id']
     db.close()
     response = client.post(
-        f'/tesco/select_sku/{ing_id}/ing',
+        f'/grocers/select_sku/{ing_id}/ing',
         data={'sku': '424242424'},
         follow_redirects=True,
     )
@@ -746,17 +752,39 @@ def test_tesco_select_sku_unknown_lookup_still_saves(client, sample_meal, monkey
     assert sku == '424242424'
 
 
-def test_tesco_select_sku_rejects_non_numeric(client, sample_meal):
+def test_tesco_select_sku_accepts_any_code_format(client, sample_meal, monkeypatch):
+    """Generic route: any non-empty code is accepted (retailers differ).
+
+    The lookup will fail for a non-numeric code, but the code is saved
+    anyway (the user entered it deliberately).
+    """
+    def _boom(sku):
+        raise app_module.tesco.TescoError('unknown product')
+    monkeypatch.setattr(app_module.providers.tesco, 'get_product', _boom)
     db = app_module.get_db()
     ing_id = db.execute('SELECT id FROM ingredients WHERE meal_id=?', (sample_meal,)).fetchone()['id']
     db.close()
-    assert client.post(f'/tesco/select_sku/{ing_id}/ing', data={'sku': 'abc'}).status_code == 400
-    assert client.post(f'/tesco/select_sku/{ing_id}/ing', data={'sku': ''}).status_code == 400
+    response = client.post(
+        f'/grocers/select_sku/{ing_id}/ing',
+        data={'sku': 'ABC-123'}, follow_redirects=True)
+    assert response.status_code == 200
+    assert b'saved it anyway' in response.data
+    db = app_module.get_db()
+    sku = db.execute('SELECT sku FROM ingredients WHERE id=?', (ing_id,)).fetchone()['sku']
+    db.close()
+    assert sku == 'ABC-123'
+
+
+def test_tesco_select_sku_empty_rejected(client, sample_meal):
+    db = app_module.get_db()
+    ing_id = db.execute('SELECT id FROM ingredients WHERE meal_id=?', (sample_meal,)).fetchone()['id']
+    db.close()
+    assert client.post(f'/grocers/select_sku/{ing_id}/ing', data={'sku': ''}).status_code == 400
 
 
 def test_tesco_select_sku_unknown_ingredient(client):
-    assert client.post('/tesco/select_sku/999999/ing', data={'sku': '123'}).status_code == 404
-    assert client.post('/tesco/select_sku/1/wrong', data={'sku': '123'}).status_code == 404
+    assert client.post('/grocers/select_sku/999999/ing', data={'sku': '123'}).status_code == 404
+    assert client.post('/grocers/select_sku/1/wrong', data={'sku': '123'}).status_code == 404
 
 
 def test_tesco_suggest_modal_shows_manual_sku_field(client, sample_meal, monkeypatch):
@@ -764,10 +792,10 @@ def test_tesco_suggest_modal_shows_manual_sku_field(client, sample_meal, monkeyp
     db = app_module.get_db()
     ing_id = db.execute('SELECT id FROM ingredients WHERE meal_id=?', (sample_meal,)).fetchone()['id']
     db.close()
-    response = client.get(f'/tesco/suggest/{ing_id}/ing')
+    response = client.get(f'/grocers/suggest/{ing_id}/ing')
     assert response.status_code == 200
-    assert b'/tesco/select_sku/' + str(ing_id).encode() + b'/ing' in response.data
-    assert b'Enter a Tesco product number (SKU)' in response.data
+    assert b'/grocers/select_sku/' + str(ing_id).encode() + b'/ing' in response.data
+    assert b'Enter a Tesco product code' in response.data
 
 
 def test_create_shopping_list_carries_sku(client, sample_meal, monkeypatch):
@@ -791,7 +819,7 @@ def test_tesco_add_to_basket_unsigned(client, monkeypatch):
     db.execute("INSERT INTO shopping_list_items (name, quantity, checked, sku) VALUES (?, ?, 0, ?)", ('Milk', '2', '777888999'))
     db.commit()
     db.close()
-    response = client.post('/tesco/add_to_basket', follow_redirects=True)
+    response = client.post('/grocers/add_to_basket', follow_redirects=True)
     assert response.status_code == 200
     assert b'Sign in to Tesco first' in response.data
 
@@ -805,7 +833,7 @@ def test_tesco_add_to_basket(client, monkeypatch):
     db.execute("INSERT INTO shopping_list_items (name, quantity, checked, sku) VALUES (?, ?, 0, '')", ('Butter', '1'))
     db.commit()
     db.close()
-    response = client.post('/tesco/add_to_basket', follow_redirects=True)
+    response = client.post('/grocers/add_to_basket', follow_redirects=True)
     assert response.status_code == 200
     # Only the matched item is pushed, with its parsed quantity.
     assert calls == [('777888999', 2)]
@@ -818,7 +846,7 @@ def test_tesco_add_to_basket_no_matches(client, monkeypatch):
     db.execute("INSERT INTO shopping_list_items (name, quantity, checked, sku) VALUES (?, ?, 0, '')", ('Butter', '1'))
     db.commit()
     db.close()
-    response = client.post('/tesco/add_to_basket', follow_redirects=True)
+    response = client.post('/grocers/add_to_basket', follow_redirects=True)
     assert response.status_code == 200
     assert b'No shopping list items have Tesco products matched' in response.data
 
@@ -848,7 +876,7 @@ def test_tesco_select_caches_product(client, sample_meal, monkeypatch):
     db = app_module.get_db()
     ing = db.execute('SELECT id, name FROM ingredients WHERE meal_id=?', (sample_meal,)).fetchone()
     db.close()
-    response = client.post(f'/tesco/select/{ing["id"]}/ing', data={
+    response = client.post(f'/grocers/select/{ing["id"]}/ing', data={
         'sku': '999000102',
         'title': 'Option B ' + ing['name'],
         'brand': 'TESCO',
