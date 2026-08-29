@@ -100,5 +100,7 @@ def list_grocers():
 # Import provider modules for their registration side effects.
 from . import tesco as _tesco  # noqa: E402,F401
 from . import sainsburys as _sainsburys  # noqa: E402,F401
+from . import asda as _asda  # noqa: E402,F401
 register(_tesco.TescoGrocer())
 register(_sainsburys.SainsburysGrocer())
+register(_asda.AsdaGrocer())
