@@ -11,7 +11,7 @@ def test_registry_has_morrisons():
     assert grocer is not None
     assert grocer.name == 'Morrisons'
     keys = [g.key for g in app_module.providers.list_grocers()]
-    assert keys == ['asda', 'morrisons', 'sainsburys', 'tesco']
+    assert keys == ['asda', 'morrisons', 'sainsburys', 'tesco', 'waitrose']
 
 
 def _raw(name='Milk', sku='123', uuid='u-123', price=1.5, unit=4.5,

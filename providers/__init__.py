@@ -102,7 +102,9 @@ from . import tesco as _tesco  # noqa: E402,F401
 from . import sainsburys as _sainsburys  # noqa: E402,F401
 from . import asda as _asda  # noqa: E402,F401
 from . import morrisons as _morrisons  # noqa: E402,F401
+from . import waitrose as _waitrose  # noqa: E402,F401
 register(_tesco.TescoGrocer())
 register(_sainsburys.SainsburysGrocer())
 register(_asda.AsdaGrocer())
 register(_morrisons.MorrisonsGrocer())
+register(_waitrose.WaitroseGrocer())
