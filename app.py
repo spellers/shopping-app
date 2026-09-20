@@ -200,7 +200,9 @@ def init_db():
             quantity TEXT,
             checked INTEGER DEFAULT 0,
             sku TEXT,
-            retailer TEXT NOT NULL DEFAULT 'tesco'
+            retailer TEXT NOT NULL DEFAULT 'tesco',
+            shared INTEGER DEFAULT 0,
+            include INTEGER DEFAULT 1
         );
         CREATE TABLE IF NOT EXISTS shopping_list_meals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -370,6 +372,13 @@ def _migrate(db):
             for row in db.execute('SELECT id, name FROM ' + table).fetchall():
                 if any(h in (row['name'] or '').lower() for h in NON_SHARED_HINTS):
                     db.execute('UPDATE ' + table + ' SET shareable=0 WHERE id=?', (row['id'],))
+    # shopping_list_items: shared (item came from a shared good) and
+    # include (per-item basket switch: 1 = add to basket).
+    existing_sli = {row[1] for row in db.execute('PRAGMA table_info(shopping_list_items)').fetchall()}
+    if 'shared' not in existing_sli:
+        db.execute('ALTER TABLE shopping_list_items ADD COLUMN shared INTEGER DEFAULT 0')
+    if 'include' not in existing_sli:
+        db.execute('ALTER TABLE shopping_list_items ADD COLUMN include INTEGER DEFAULT 1')
     # One-off: tag the starter (demo) meals with a 'Demo' category so the
     # category feature is visible on existing installs. Idempotent — only
     # adds where the meal doesn't already carry a 'Demo' category.
@@ -933,6 +942,19 @@ def toggle_shopping(item_id):
     return redirect(url_for('shopping_list_get'))
 
 
+@app.route('/shopping_list/<int:item_id>/toggle_include', methods=['POST'])
+def toggle_include(item_id):
+    """Flip the per-item basket switch (include: 1 = add to basket)."""
+    db = get_db()
+    item = db.execute('SELECT include FROM shopping_list_items WHERE id=?', (item_id,)).fetchone()
+    if item:
+        db.execute('UPDATE shopping_list_items SET include=? WHERE id=?',
+                   (1 - (item['include'] or 0), item_id))
+        db.commit()
+    db.close()
+    return redirect(request.referrer or url_for('shopping_list_get'))
+
+
 @app.route('/create_shopping_list', methods=['POST'])
 def create_shopping_list():
     '''Create shopping list from selected meals'''
@@ -1036,10 +1058,10 @@ def create_shopping_list():
         else:
             quantity = data['quantity']
         db.execute(
-            'INSERT INTO shopping_list_items (name, quantity, checked, sku, retailer) '
-            'VALUES (?, ?, 0, ?, ?)',
+            'INSERT INTO shopping_list_items (name, quantity, checked, sku, retailer, shared, include) '
+            'VALUES (?, ?, 0, ?, ?, ?, 1)',
             (name.title() if name else '', quantity, data.get('sku') or '',
-             data.get('retailer') or 'tesco')
+             data.get('retailer') or 'tesco', 1 if data['shareable'] else 0)
         )
     
     db.commit()
@@ -1060,7 +1082,7 @@ def delete_shopping(item_id):
 @app.route('/shopping_list', methods=['GET'])
 def shopping_list_get():
     db = get_db()
-    items = [dict(r) for r in db.execute('SELECT * FROM shopping_list_items ORDER BY name').fetchall()]
+    all_items = [dict(r) for r in db.execute('SELECT * FROM shopping_list_items ORDER BY name').fetchall()]
     meals = db.execute(
         'SELECT m.* FROM meals m JOIN shopping_list_meals s ON s.meal_id = m.id ORDER BY m.id'
     ).fetchall()
@@ -1068,7 +1090,7 @@ def shopping_list_get():
         (r['retailer'], r['sku']): dict(r)
         for r in db.execute('SELECT * FROM grocer_products WHERE sku != ""').fetchall()
     }
-    for item in items:
+    for item in all_items:
         item['grocer'] = products.get((item.get('retailer') or 'tesco', item['sku']))
         if item['grocer'] is None and item['sku']:
             # Has a SKU but no cache row (matched before cache writes existed) -
@@ -1081,12 +1103,18 @@ def shopping_list_get():
                 if row:
                     item['grocer'] = dict(row)
     grocer = _active_grocer()
-    for item in items:
+    for item in all_items:
         # Only items matched against THIS supermarket count as matched.
         if (item.get('retailer') or 'tesco') != grocer.key:
             item['grocer'] = None
-    matched = [i for i in items if i['sku'] and i['grocer']]
-    return render_template('shopping_list.html', items=items, meals=meals,
+    items = [i for i in all_items if not i.get('shared')]
+    shared_items = [i for i in all_items if i.get('shared')]
+    # Basket candidates: per-meal items always; shared items only when their
+    # basket switch is on. All must have a product for this grocer.
+    matched = [i for i in all_items if i['sku'] and i['grocer']
+               and (not i.get('shared') or i.get('include'))]
+    return render_template('shopping_list.html', items=items, shared_items=shared_items,
+                           meals=meals,
                            vote_id=request.args.get('vote_id', ''),
                            signed_in=grocer.auth_status()['signed_in'],
                            matched=matched, grocer=grocer)
@@ -1311,7 +1339,8 @@ def grocers_add_to_basket():
         return redirect(url_for('grocers_hub'))
     db = get_db()
     items = db.execute(
-        'SELECT * FROM shopping_list_items WHERE retailer=? AND sku IS NOT NULL AND sku != ""',
+        'SELECT * FROM shopping_list_items WHERE retailer=? AND sku IS NOT NULL AND sku != "" '
+        'AND (COALESCE(shared,0)=0 OR include=1)',
         (grocer.key,)).fetchall()
     db.close()
     if not items:

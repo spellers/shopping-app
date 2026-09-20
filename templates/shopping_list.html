@@ -4,11 +4,49 @@
 <div class="page-header">
     <h2 style="font-weight:700; margin-bottom:20px;">Shopping List</h2>
     {% if request.args.get('vote_id') %}
-    <a href="/vote/{{ request.args.get('vote_id') }}/results" class="btn btn-outline-secondary">← Back to Results</a>
+    <a href="/vote/{{ request.args.get('vote_id') }}/results" class="btn btn-outline-secondary">&larr; Back to Results</a>
     {% else %}
-    <a href="/votes" class="btn btn-outline-secondary">← Back to Voting</a>
+    <a href="/votes" class="btn btn-outline-secondary">&larr; Back to Voting</a>
     {% endif %}
 </div>
+
+{% macro item_row(item, grocer, switchable=False) %}
+{% set off = switchable and not item.include %}
+<div class="mb-3 p-3 border rounded" style="{{ 'opacity:0.6;' if off else '' }}">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+        <div style="min-width:0;">
+            <h6 style="font-weight:600; margin:0; {{ 'text-decoration:line-through;' if off else '' }}">{{ item.name }}</h6>
+            {% if item.grocer %}
+            <small class="text-muted d-block" style="font-size:12px;">
+                {{ item.grocer.title }}
+                {% if item.grocer.price is not none %}
+                &middot; &pound;{{ '%.2f' % item.grocer.price }}{% if item.grocer.unit_of_measure %}/{{ item.grocer.unit_of_measure }}{% endif %}
+                {% endif %}
+            </small>
+            {% endif %}
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+            {% if item.quantity %}
+            <span class="badge bg-secondary">{{ item.quantity }}</span>
+            {% endif %}
+            {% if item.grocer %}
+            <span class="badge bg-success-subtle text-success">{{ grocer.name }} &pound;{{ '%.2f' % (item.grocer.price or 0) }}</span>
+            {% else %}
+            <span class="badge text-muted border">unmatched</span>
+            {% endif %}
+            {% if switchable %}
+            <form method="POST" action="/shopping_list/{{ item.id }}/toggle_include" class="m-0 d-inline-flex">
+                <div class="form-check form-switch" style="margin-bottom:0;">
+                    <input class="form-check-input" type="checkbox" role="switch" id="basket_{{ item.id }}"
+                           {% if item.include %}checked{% endif %} onchange="this.form.submit()">
+                    <label class="form-check-label" for="basket_{{ item.id }}" style="font-size:12px;">Basket</label>
+                </div>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endmacro %}
 
 {% if meals %}
 <div class="card mb-4">
@@ -25,36 +63,25 @@
 </div>
 {% endif %}
 
-{% if items %}
+{% if items or shared_items %}
 <div class="card">
     <div class="card-body">
-        {% for item in items %}
-        <div class="mb-3 p-3 border rounded">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                    <h6 style="font-weight:600; margin:0;">{{ item.name }}</h6>
-                    {% if item.grocer %}
-                    <small class="text-muted d-block" style="font-size:12px;">
-                        {{ item.grocer.title }}
-                        {% if item.grocer.price is not none %}
-                        &middot; &pound;{{ '%.2f' % item.grocer.price }}{% if item.grocer.unit_of_measure %}/{{ item.grocer.unit_of_measure }}{% endif %}
-                        {% endif %}
-                    </small>
-                    {% endif %}
-                </div>
-                <div style="display:flex; align-items:center; gap:6px;">
-                    {% if item.quantity %}
-                    <span class="badge bg-secondary">{{ item.quantity }}</span>
-                    {% endif %}
-                    {% if item.grocer %}
-                    <span class="badge bg-success-subtle text-success">{{ grocer.name }} &pound;{{ '%.2f' % (item.grocer.price or 0) }}</span>
-                    {% else %}
-                    <span class="badge text-muted border">unmatched</span>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
+        {% if shared_items %}
+        <h5 style="font-weight:600; margin-bottom:12px;">Check list <span class="badge bg-info-subtle text-info">{{ shared_items|length }}</span></h5>
+        <small class="text-muted d-block mb-2">Shared goods &mdash; one unit covers several meals. Switch off any you already have.</small>
+        {% for item in shared_items %}
+            {{ item_row(item, grocer, True) }}
         {% endfor %}
+        {% endif %}
+
+        {% if items %}
+        {% if shared_items %}
+        <hr style="margin:16px 0;">
+        {% endif %}
+        {% for item in items %}
+            {{ item_row(item, grocer) }}
+        {% endfor %}
+        {% endif %}
 
         {% if matched and signed_in %}
         <hr style="margin:16px 0;">
