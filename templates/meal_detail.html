@@ -61,7 +61,15 @@
             <tr>
                 <td>{{ link['ingredient_name'] }}</td>
                 <td><span class="badge bg-secondary">{{ link['category'] or '-' }}</span></td>
-                <td>{{ link['quantity'] or '-' }}</td>
+                <td style="white-space:nowrap; text-align:center;">
+                    <form method="POST" action="/adjust_quantity/persist/{{ link['id'] }}/down" style="display:inline;">
+                        <button type="submit" class="btn btn-outline-secondary btn-sm" style="padding:0 6px; font-size:13px; line-height:1.4;">&minus;</button>
+                    </form>
+                    <span style="display:inline-block; min-width:20px; text-align:center; font-weight:500;">{{ link['quantity'] or '1' }}</span>
+                    <form method="POST" action="/adjust_quantity/persist/{{ link['id'] }}/up" style="display:inline;">
+                        <button type="submit" class="btn btn-outline-secondary btn-sm" style="padding:0 6px; font-size:13px; line-height:1.4;">+</button>
+                    </form>
+                </td>
                 <td>
                     <form method="POST" action="/toggle_shareable/{{ link['persistent_ingredient_id'] }}/persist" style="display:inline;">
                         <button type="submit" class="btn btn-sm btn-outline-{{ 'warning' if (link['shareable'] is none or link['shareable']) else 'secondary' }}"
@@ -105,7 +113,15 @@
             {% for ing in ingredients %}
             <tr>
                 <td>{{ ing['name'] }}</td>
-                <td>{{ ing['quantity'] }}</td>
+                <td style="white-space:nowrap; text-align:center;">
+                    <form method="POST" action="/adjust_quantity/ing/{{ ing['id'] }}/down" style="display:inline;">
+                        <button type="submit" class="btn btn-outline-secondary btn-sm" style="padding:0 6px; font-size:13px; line-height:1.4;">&minus;</button>
+                    </form>
+                    <span style="display:inline-block; min-width:20px; text-align:center; font-weight:500;">{{ ing['quantity'] or '1' }}</span>
+                    <form method="POST" action="/adjust_quantity/ing/{{ ing['id'] }}/up" style="display:inline;">
+                        <button type="submit" class="btn btn-outline-secondary btn-sm" style="padding:0 6px; font-size:13px; line-height:1.4;">+</button>
+                    </form>
+                </td>
                 <td>{{ ing['unit'] }}</td>
                 <td>
                     <form method="POST" action="/toggle_shareable/{{ ing['id'] }}/ing" style="display:inline;">

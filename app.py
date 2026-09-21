@@ -12,7 +12,7 @@ import recipe_import
 # the routes themselves are now provider-driven and will generalise to more
 # retailers in plan step 7.
 _TESCO = providers.get_grocer('tesco')
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, g
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, g, abort
 import socket
 import sys
 import updates
@@ -704,6 +704,35 @@ def toggle_shareable(ingredient_id, kind):
     db.commit()
     db.close()
     flash('Updated.', 'success')
+    return redirect(request.referrer or url_for('meal_tracker'))
+
+@app.route('/adjust_quantity/<kind>/<int:id>/<direction>', methods=['POST'])
+def adjust_quantity(kind, id, direction):
+    """Increment/decrement a quantity by 1 (min 1). kind: ing or persist."""
+    if kind == 'ing':
+        table = 'ingredients'
+    elif kind == 'persist':
+        table = 'persistent_ingredient_meals'
+    else:
+        abort(404)
+    delta = 1 if direction == 'up' else -1
+    db = get_db()
+    row = db.execute('SELECT quantity FROM ' + table + ' WHERE id=?', (id,)).fetchone()
+    if not row:
+        abort(404)
+    try:
+        qty = float(row['quantity']) if row['quantity'] else 1.0
+    except (ValueError, TypeError):
+        flash('Quantity must be a number to adjust.', 'warning')
+        return redirect(request.referrer or url_for('meal_tracker'))
+    new_qty = qty + delta
+    if new_qty < 1:
+        new_qty = 1.0
+    # Store as int if whole, else rounded to 1 decimal
+    qty_str = str(int(new_qty)) if new_qty == int(new_qty) else str(round(new_qty, 1))
+    db.execute('UPDATE ' + table + ' SET quantity=? WHERE id=?', (qty_str, id))
+    db.commit()
+    db.close()
     return redirect(request.referrer or url_for('meal_tracker'))
 
 @app.route('/delete_ingredient/<int:ingredient_id>', methods=['POST'])
